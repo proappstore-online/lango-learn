@@ -1,4 +1,4 @@
-# Lingo comprehensive epics and issues
+# Lango Learn comprehensive epics and issues
 
 Status: planning baseline — 2026-10-20  
 Inputs: official product research, community-risk review, curriculum/learning-science
@@ -12,7 +12,7 @@ retained in [research-duolingo-product.md](research-duolingo-product.md).
 - MVP is one declared source-language → target-language pair, an A0 to early-A1
   slice, and Latin script. A "language launch" means reviewed content and support,
   not a generated shell.
-- Use CEFR as an alignment framework and Lingo-authored learner goals. Do not
+- Use CEFR as an alignment framework and Lango Learn-authored learner goals. Do not
   claim certification or copy/licence restricted ACTFL Can-Do wording.
 - Completion, XP, streaks, and a lesson path are not proof of proficiency.
 - Deterministic, reviewed, language-aware answer evaluation is the MVP authority.
@@ -40,7 +40,7 @@ retained in [research-duolingo-product.md](research-duolingo-product.md).
 | ID | Issue | Done when | Depends on |
 | --- | --- | --- | --- |
 | LNG-001 | Approve learner/product charter | Names course pair, age/region, A1 boundary, supported skills, exclusions, and no-certification claims. | — |
-| LNG-002 | Define Lingo-owned learning outcomes | Each outcome is contextual, observable, source/target-language scoped, and has evidence requirements. | LNG-001 |
+| LNG-002 | Define Lango Learn-owned learning outcomes | Each outcome is contextual, observable, source/target-language scoped, and has evidence requirements. | LNG-001 |
 | LNG-003 | Establish framework/licensing policy | CEFR/ACTFL references, permitted wording, attribution/licences, and marketing review are recorded. | LNG-001 |
 | LNG-004 | Define learning and safety metrics | Separates exposure, retention, outcome performance, engagement, support load, accessibility, and revenue; prohibits revenue-from-failure metrics. | LNG-001 |
 | LNG-005 | Define event taxonomy | Documents lesson, answer, hint, review, report, notification, and failure events without raw answers/audio in general analytics. | LNG-004 |
@@ -255,7 +255,7 @@ has been evaluated with real learners.
 ## Issue creation order
 
 Create R0 and R1 issues first. Do not bulk-create later-phase issues in a tracker
-until the pilot validates the first course and the PAS Lingo app/repository has a
+until the pilot validates the first course and the PAS Lango Learn app/repository has a
 settled, owned identifier. Use the IDs above as stable import keys; each row is a
 separately estimable issue, with acceptance criteria already in its “Done when”
 column.
