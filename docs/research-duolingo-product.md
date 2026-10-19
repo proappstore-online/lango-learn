@@ -1,10 +1,10 @@
 # Research: language-learning product mechanics
 
 Date: 2026-10-20  
-Purpose: retain product research so Lingo does not need to repeat this discovery.
+Purpose: retain product research so Lango Learn does not need to repeat this discovery.
 
 This document records **product patterns**, not an implementation or design
-template. Lingo must develop its own name, visual identity, curriculum, copy,
+template. Lango Learn must develop its own name, visual identity, curriculum, copy,
 content, interactions, characters, audio, and technical implementation. Do not
 copy protected Duolingo material or imply an affiliation.
 
@@ -18,7 +18,7 @@ copy protected Duolingo material or imply an affiliation.
   prior material remains available to revisit.
 - An account/profile persists progress across devices.
 
-Lingo implication: onboarding needs a transparent diagnostic, stated confidence,
+Lango Learn implication: onboarding needs a transparent diagnostic, stated confidence,
 an easy restart/reassessment path, explicit reminder permission, and a first
 session that proves the learning loop quickly.
 
@@ -36,7 +36,7 @@ Official sources:
 - Exercises span reading, writing, listening, and speaking. Difficulty can move
   from recognition toward recall and production.
 
-Lingo implication: author around explicit Can-Do outcomes and an open curriculum
+Lango Learn implication: author around explicit Can-Do outcomes and an open curriculum
 schema, not a screen-by-screen course. Provide source-language explanations and
 unit references at the point of need; do not force a learner to hunt for them.
 
@@ -56,7 +56,7 @@ Official sources:
   history; product materials describe changing later lesson difficulty based on
   performance.
 
-Lingo implication: review must be primary navigation, not a hidden premium
+Lango Learn implication: review must be primary navigation, not a hidden premium
 feature. Build a per-item/per-skill mastery model and spaced-retrieval scheduler,
 but expose why a recommendation appears and always let the learner choose a
 practice mode.
@@ -77,7 +77,7 @@ Official sources:
 - Intermediate mini-units can introduce a small amount of language then use it
   promptly in dialogue, listening, or conversation.
 
-Lingo implication: begin with reliable core exercises, then add authored dialogue
+Lango Learn implication: begin with reliable core exercises, then add authored dialogue
 and scenario practice. Any timed mode must be optional and accessible; fluency
 practice cannot be reduced to speed alone.
 
@@ -96,7 +96,7 @@ Official sources:
 - Friends can share progress, co-operate on weekly tasks, maintain shared habits,
   and encourage each other.
 
-Lingo implication: lead with proficiency and learning consistency, not raw volume.
+Lango Learn implication: lead with proficiency and learning consistency, not raw volume.
 Use an original, low-pressure habit model: flexible goals, grace days or pauses,
 timezone correctness, and opt-in competition/co-operation. Never make learners
 feel that a broken streak erases real progress.
@@ -116,7 +116,7 @@ Official sources:
 - Higher subscriptions add AI roleplay, video conversation, and explanations.
 - Family plans and entitlement differences exist.
 
-Lingo implication: core curriculum and review must remain usable without an
+Lango Learn implication: core curriculum and review must remain usable without an
 upsell. If subscriptions are added, define entitlement rules centrally, make all
 marketing dismissible, and never block the normal course path behind an AI or
 premium activity.
@@ -133,7 +133,7 @@ Official sources:
   related materials mention transcripts, level/topic awareness, post-call
   feedback, captions, translations, and push-to-talk in some experiences.
 
-Lingo implication: this is a post-core feature. It must be opt-in, support quiet
+Lango Learn implication: this is a post-core feature. It must be opt-in, support quiet
 thinking time and text alternatives, record only with clear consent, offer
 transcript/recording deletion, enforce cost limits, and supply a non-AI practice
 path.
@@ -149,7 +149,7 @@ Official sources:
 - A public, per-course score maps progress to CEFR capability descriptions and
   supports comparison across courses.
 
-Lingo implication: use an independently designed proficiency signal grounded in
+Lango Learn implication: use an independently designed proficiency signal grounded in
 our own Can-Do completion and assessments. Do not reuse another product's score
 name or presentation.
 
@@ -158,9 +158,9 @@ Official source: [Duolingo Score](https://blog.duolingo.com/duolingo-score/)
 ## Community feedback: recurring risks to address
 
 Forum observations are anecdotal rather than product requirements, but repeated
-themes are useful design risks to validate with Lingo learners.
+themes are useful design risks to validate with Lango Learn learners.
 
-| Observation | Lingo response |
+| Observation | Lango Learn response |
 | --- | --- |
 | Learners want targeted review for mistakes, vocab, listening, and speaking to be easy to find. | Put Review in primary navigation; offer recommendations and explicit modes. |
 | Raw XP competitions can reward repetitive, shallow activity. | Make competition optional; rank quality signals or course milestones rather than repetition alone. |
