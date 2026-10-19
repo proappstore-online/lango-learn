@@ -82,7 +82,7 @@ change can bypass that organisation-level restriction.
 PAS supports **app-level** collaboration through its built-in roles:
 `owner`, `member`, `moderator`, `editor`, and `viewer`. An app owner can assign
 roles and create join-code/link/QR invites for team members. That is a useful
-capability for Lingo's future internal-content or moderation team.
+capability for Lango Learn's future internal-content or moderation team.
 
 It does **not** solve this ownership mismatch:
 
