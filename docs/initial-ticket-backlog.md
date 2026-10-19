@@ -1,4 +1,4 @@
-# Lingo: initial ticket backlog
+# Lango Learn: initial ticket backlog
 
 Date: 2026-10-20  
 Status: draft, ready to import into an issue tracker after PAS is connected.
@@ -101,7 +101,7 @@ plans, punitive attempt systems, rich scenario content, and AI conversation.
   pronunciation, and examples within the unit and from feedback.
 - [ ] **LINGO-28 — Unit checkpoint.** Build a fair, accessible assessment that
   tests the unit Can-Do outcome and routes weak skills to Review.
-- [ ] **LINGO-29 — Original proficiency indicator.** Map evidence to Lingo's own
+- [ ] **LINGO-29 — Original proficiency indicator.** Map evidence to Lango Learn's own
   CEFR-referenced capability display; document its limitations.
 - [ ] **LINGO-30 — Revisit completed content.** Permit review and replay without
   undoing completion or forcing re-progression.
@@ -110,7 +110,7 @@ plans, punitive attempt systems, rich scenario content, and AI conversation.
 
 - [ ] **LINGO-31 — Daily-goal and habit calculator.** Compute configurable daily
   activity in the learner timezone; separate it from course proficiency.
-- [ ] **LINGO-32 — Original milestones.** Design Lingo-specific celebrations and
+- [ ] **LINGO-32 — Original milestones.** Design Lango Learn-specific celebrations and
   rewards with no borrowed names, visuals, sounds, or interaction patterns.
 - [ ] **LINGO-33 — Respectful reminders.** Schedule opt-in reminders; support
   quiet hours, easy disable, and smart frequency caps.
@@ -126,7 +126,7 @@ plans, punitive attempt systems, rich scenario content, and AI conversation.
 - [ ] **LINGO-37 — Accessible timed practice.** Offer an optional, adjustable,
   non-essential speed challenge.
 - [ ] **LINGO-38 — Original scenario practice.** Add contextual task-based
-  exercises with Lingo-created settings and characters.
+  exercises with Lango Learn-created settings and characters.
 
 ## Epic E9 — social, only after core validation
 
@@ -155,7 +155,7 @@ plans, punitive attempt systems, rich scenario content, and AI conversation.
 - [ ] **LINGO-47 — Speech permission and capture.** Explicit microphone consent,
   recording indicators, diagnostic help, and text alternative.
 - [ ] **LINGO-48 — Constrained scenario conversation.** Build opt-in, level-aware
-  conversation around Lingo-authored scenarios with pause/retry controls.
+  conversation around Lango Learn-authored scenarios with pause/retry controls.
 - [ ] **LINGO-49 — Safe feedback rubric.** Provide constructive, bounded feedback
   and moderation/safety controls; never present uncertain AI output as fact.
 - [ ] **LINGO-50 — Conversation retention and cost controls.** Per-session
