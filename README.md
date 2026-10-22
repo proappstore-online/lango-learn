@@ -5,6 +5,8 @@ course. The current web app is a branded shell; lessons and learner progress
 are planned in the [backlog](docs/comprehensive-epics-and-issues.md). The
 [architecture decisions](docs/architecture.md) record the client/server
 boundary and conventions for the upcoming course and data work.
+The [environment/config contract](docs/config-contract.md) defines feature
+defaults, media limits, browser support, and the public/private boundary.
 
 Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
 CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:migrations`,
