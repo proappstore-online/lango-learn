@@ -11,6 +11,8 @@ CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:migrations`,
 `pnpm check:actions`, `pnpm build`, and `pnpm test:e2e`. The build runs the PAS
 compliance check before compiling the web app. To run the browser checks locally,
 install Chromium once with `pnpm exec playwright install chromium`.
+The [accessibility manual-review checklist](docs/accessibility-manual-review.md)
+tracks device and screen-reader checks that browser automation cannot complete.
 
 The migration gate validates additive, ordered, idempotent D1 SQL in a fresh
 SQLite database. The action gate executes every current `mcp.json` action as
