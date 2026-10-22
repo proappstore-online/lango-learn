@@ -21,7 +21,9 @@ against the real migrations with foreign keys enabled.
 `attempt_id`, `exposure_id`, and `report_id` are client-generated UUID request
 IDs. A retry must reuse the same ID; a second insert is ignored. The caller
 must read the owned row to distinguish a successful previous call from a
-rejected request. `expected_updated_at` implements optimistic concurrency; a
+rejected request. `expected_updated_at` implements optimistic concurrency.
+Mutable learner checkpoints also require server time to be strictly later
+than that value, so an accepted write advances the checkpoint. A
 zero-row write means stale input, replay, invalid state, or unavailable data.
 The client should refresh the scoped read before retrying. List cursors use
 ordered timestamp/ID pairs and bounded limits.

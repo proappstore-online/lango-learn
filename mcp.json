@@ -105,8 +105,8 @@
       "description": "Record an ungraded exercise attempt and advance its owned session checkpoint atomically",
       "operation": "batch",
       "statements": [
-        "INSERT OR IGNORE INTO exercise_attempts (id,user_id,session_id,lesson_id,exercise_id,attempt_number,evaluator_policy_version,result_code,created_at) SELECT :attempt_id,:__user_id,s.id,s.lesson_id,e.id, (SELECT COUNT(*)+1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=s.id AND a.exercise_id=e.id), e.evaluator_policy_version,'pending_evaluation',:__now FROM learning_sessions s JOIN exercises e ON e.lesson_id=s.lesson_id WHERE s.id=:session_id AND s.user_id=:__user_id AND s.status='active' AND s.updated_at=:expected_updated_at AND e.id=:exercise_id AND e.position=s.last_exercise_position AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id) AND lower(:attempt_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'",
-        "UPDATE learning_sessions SET last_exercise_position=last_exercise_position+1,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id AND a.user_id=:__user_id AND a.session_id=:session_id AND a.exercise_id=:exercise_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM exercises e WHERE e.id=:exercise_id AND e.lesson_id=learning_sessions.lesson_id AND e.position=learning_sessions.last_exercise_position)"
+        "INSERT OR IGNORE INTO exercise_attempts (id,user_id,session_id,lesson_id,exercise_id,attempt_number,evaluator_policy_version,result_code,created_at) SELECT :attempt_id,:__user_id,s.id,s.lesson_id,e.id, (SELECT COUNT(*)+1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=s.id AND a.exercise_id=e.id), e.evaluator_policy_version,'pending_evaluation',:__now FROM learning_sessions s JOIN exercises e ON e.lesson_id=s.lesson_id WHERE s.id=:session_id AND s.user_id=:__user_id AND s.status='active' AND s.updated_at=:expected_updated_at AND :__now>:expected_updated_at AND e.id=:exercise_id AND e.position=s.last_exercise_position AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id) AND lower(:attempt_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'",
+        "UPDATE learning_sessions SET last_exercise_position=last_exercise_position+1,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND :__now>:expected_updated_at AND EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id AND a.user_id=:__user_id AND a.session_id=:session_id AND a.exercise_id=:exercise_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM exercises e WHERE e.id=:exercise_id AND e.lesson_id=learning_sessions.lesson_id AND e.position=learning_sessions.last_exercise_position)"
       ],
       "params": {
         "attempt_id": {
@@ -132,7 +132,7 @@
       "name": "complete_lesson",
       "description": "Complete an owned session after every exercise has an attempt",
       "operation": "execute",
-      "sql": "UPDATE learning_sessions SET status='completed',completed_at=:__now,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id) AND NOT EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=learning_sessions.id AND a.exercise_id=e.id))",
+      "sql": "UPDATE learning_sessions SET status='completed',completed_at=:__now,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND :__now>:expected_updated_at AND EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id) AND NOT EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=learning_sessions.id AND a.exercise_id=e.id))",
       "params": {
         "session_id": {
           "type": "string",
@@ -196,7 +196,7 @@
       "name": "update_preferences",
       "description": "Update caller preferences with a stale-write guard",
       "operation": "execute",
-      "sql": "UPDATE learner_preferences SET source_language=:source_language,target_language=:target_language, region=:region,timezone=:timezone,reminders_enabled=:reminders_enabled,updated_at=:__now WHERE user_id=:__user_id AND updated_at=:expected_updated_at AND :reminders_enabled IN (0,1)",
+      "sql": "UPDATE learner_preferences SET source_language=:source_language,target_language=:target_language, region=:region,timezone=:timezone,reminders_enabled=:reminders_enabled,updated_at=:__now WHERE user_id=:__user_id AND updated_at=:expected_updated_at AND :__now>:expected_updated_at AND :reminders_enabled IN (0,1)",
       "params": {
         "source_language": {
           "type": "string",

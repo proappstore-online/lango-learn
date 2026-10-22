@@ -3,6 +3,7 @@
 import json
 import re
 import sqlite3
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -33,6 +34,9 @@ def execute(connection, tool, user, *, now=1000, roles=(), **params):
     required_roles = tool.get("auth", {}).get("app_roles", [])
     if required_roles and not set(required_roles).intersection(roles):
         raise PermissionError(f"{tool['name']}: PAS app role required")
+    # PAS supplies these bindings from the session, never from request data.
+    if set(params) & MAGIC:
+        raise ValueError("request cannot override PAS session bindings")
     bindings = {"__user_id": user, "__uuid": str(uuid.uuid4()), "__now": now}
     bindings.update({key: value.get("default") for key, value in tool.get("params", {}).items()})
     bindings.update(params)
@@ -93,83 +97,129 @@ def main():
     tools = json.loads((ROOT / "mcp.json").read_text())["tools"]
     validate(tools)
     actions = {tool["name"]: tool for tool in tools}
+    with tempfile.TemporaryDirectory() as directory:
+        for mode in ("fresh", "upgraded"):
+            path = Path(directory) / f"{mode}.sqlite"
+            migrations = load_migrations()
+            if mode == "upgraded":
+                with sqlite3.connect(path) as legacy:
+                    legacy.execute("PRAGMA foreign_keys = ON")
+                    apply_migrations(legacy, migrations[:1])
+                    legacy.execute("INSERT INTO items VALUES ('legacy','alice','Before upgrade',NULL,500)")
+            with sqlite3.connect(path) as connection:
+                connection.execute("PRAGMA foreign_keys = ON")
+                apply_migrations(connection, migrations)
+                apply_migrations(connection, migrations)
+                assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+                if mode == "upgraded":
+                    assert connection.execute("SELECT title FROM items WHERE id='legacy'").fetchone() == ("Before upgrade",)
+                run_contracts(connection, actions)
+            # Reopen the file so the result is checked as durable data.
+            with sqlite3.connect(path) as persisted:
+                persisted.execute("PRAGMA foreign_keys = ON")
+                assert persisted.execute("PRAGMA foreign_key_check").fetchall() == []
+                assert persisted.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] >= 18
+                assert persisted.execute("SELECT COUNT(*) FROM guest_lesson_imports").fetchone()[0] >= 4
+                assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='superseded'").fetchone() == (1,)
+                assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='retired'").fetchone() == (1,)
+                assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='active'").fetchone() == (1,)
+                assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='alice'").fetchone() == (2,)
+                assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='bob'").fetchone() == (0,)
+    print(f"Action authorization gate passed: {len(tools)} actions on fresh and upgraded persisted databases")
+
+
+def run_contracts(connection, actions):
     def call(connection, name, user, **kwargs):
         return execute(connection, actions[name], user, **kwargs)
-    with sqlite3.connect(":memory:") as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        apply_migrations(connection, load_migrations())
-        seed(connection)
-        assert call(connection, "create_item", "alice", title="Alice item") == 1
-        assert call(connection, "create_item", "bob", title="Bob item") == 1
-        alice_item = call(connection, "list_items", "alice")[0][0]
-        bob_item = call(connection, "list_items", "bob")[0][0]
-        assert alice_item != bob_item
-        assert call(connection, "get_item", "bob", id=alice_item) == []
-        assert call(connection, "get_item", "alice", id=bob_item) == []
-        for user in ("alice", "bob"):
-            assert call(connection, "bootstrap_learner", user) == [1, 1]
-            assert call(connection, "bootstrap_learner", user) == [0, 0]
-            assert len(call(connection, "get_learner_bootstrap", user)) == 1
-            assert call(connection, "get_next_lesson", user)[0][0] == "l1"
-        assert call(connection, "get_learner_bootstrap", "mallory") == []
-        assert call(connection, "start_lesson", "mallory", lesson_id="l1") == 0
-        assert call(connection, "start_lesson", "alice", lesson_id="l2") == 0
-        assert call(connection, "start_lesson", "alice", lesson_id="l1") == 1
-        assert call(connection, "start_lesson", "alice", lesson_id="l1") == 0
-        assert call(connection, "start_lesson", "bob", lesson_id="l1") == 1
-        alice_session = call(connection, "get_learner_bootstrap", "alice")[0][9]
-        bob_session = call(connection, "get_learner_bootstrap", "bob")[0][9]
-        assert alice_session != bob_session
-        assert call(connection, "resume_lesson", "bob", session_id=alice_session) == []
-        assert call(connection, "resume_lesson", "alice", session_id=bob_session) == []
-        assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=1000) == 0
-        submit = dict(attempt_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e1", expected_updated_at=1000)
-        assert call(connection, "submit_exercise", "bob", **submit) == [0, 0]
-        assert call(connection, "submit_exercise", "alice", **{**submit, "exercise_id": "e3"}) == [0, 0]
-        assert call(connection, "submit_exercise", "alice", **{**submit, "expected_updated_at": 999}) == [0, 0]
-        assert call(connection, "submit_exercise", "alice", now=2000, **{**submit, "attempt_id": "not-a-uuid"}) == [0, 0]
-        assert call(connection, "submit_exercise", "alice", now=2000, **submit) == [1, 1]
-        assert call(connection, "submit_exercise", "alice", now=3000, **submit) == [0, 0]
-        assert call(connection, "submit_exercise", "alice", now=3000, **{**submit, "attempt_id": str(uuid.uuid4())}) == [0, 0]
-        assert connection.execute("SELECT attempt_number,evaluator_policy_version,result_code FROM exercise_attempts WHERE id=?", (submit['attempt_id'],)).fetchone() == (1, "policy-1", "pending_evaluation")
-        assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=2000) == 0
-        assert call(connection, "submit_exercise", "alice", now=3000, attempt_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e2", expected_updated_at=2000) == [1, 1]
-        assert call(connection, "complete_lesson", "bob", session_id=alice_session, expected_updated_at=3000) == 0
-        assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=2000) == 0
-        assert call(connection, "complete_lesson", "alice", now=4000, session_id=alice_session, expected_updated_at=3000) == 1
-        assert call(connection, "complete_lesson", "alice", now=5000, session_id=alice_session, expected_updated_at=4000) == 0
-        assert call(connection, "get_next_lesson", "alice")[0][0] == "l2"
-        assert call(connection, "get_next_lesson", "bob")[0][0] == "l1"
-        assert call(connection, "resume_lesson", "alice", session_id=alice_session) == []
-        assert call(connection, "update_preferences", "bob", source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=999) == 0
-        assert call(connection, "update_preferences", "alice", now=5000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=1000) == 1
-        assert call(connection, "update_preferences", "alice", now=6000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=1000) == 0
-        assert connection.execute("SELECT reminders_enabled FROM learner_preferences WHERE user_id='bob'").fetchone() == (0,)
-        connection.execute("INSERT INTO review_states (id,user_id,course_id,stable_content_id,source_exercise_id,due_at,created_at,updated_at) VALUES ('rev-a','alice','course','exercise-1','e1',1000,1000,1000)")
-        assert [row[0] for row in call(connection, "list_due_reviews", "alice", now=6000)] == ["rev-a"]
-        assert call(connection, "list_due_reviews", "alice", now=6000, before_due_at=1000, before_id="rev-a") == []
-        assert call(connection, "list_due_reviews", "bob", now=6000) == []
-        review = dict(exposure_id=str(uuid.uuid4()), review_id="rev-a", session_id=alice_session)
-        assert call(connection, "record_review", "bob", now=6000, **review) == 0
-        assert call(connection, "record_review", "alice", now=6000, **{**review, "exposure_id": "not-a-uuid"}) == 0
-        assert call(connection, "record_review", "alice", now=6000, **review) == 1
-        assert call(connection, "record_review", "alice", now=7000, **review) == 0
-        assert call(connection, "record_review", "alice", now=7000, **{**review, "exposure_id": str(uuid.uuid4())}) == 0
-        report = dict(report_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e1", category="answer")
-        assert call(connection, "create_content_report", "bob", **report) == 0
-        assert call(connection, "create_content_report", "alice", **{**report, "category": "invalid"}) == 0
-        assert call(connection, "create_content_report", "alice", **{**report, "exercise_id": "e3"}) == 0
-        assert call(connection, "create_content_report", "alice", now=6000, **{**report, "report_id": "not-a-uuid"}) == 0
-        assert call(connection, "create_content_report", "alice", now=6000, **report) == 1
-        assert call(connection, "create_content_report", "alice", now=7000, **report) == 0
-        assert len(call(connection, "list_content_reports", "alice")) == 1
-        assert call(connection, "list_content_reports", "bob") == []
-        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-        check_staff_actions(connection, call)
-        check_staff_role_matrix(connection, actions)
-        check_guest_imports(connection, call)
-    print(f"Action authorization gate passed: {len(tools)} actions, ownership, replay and stale-write fixtures")
-
+    seed(connection)
+    for name in actions:
+        try:
+            call(connection, name, None)
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError(f"signed-out caller used {name}")
+    try:
+        call(connection, "get_learner_bootstrap", "mallory", __user_id="alice")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("request overrode PAS identity")
+    assert call(connection, "create_item", "alice", title="Alice item") == 1
+    assert call(connection, "create_item", "bob", title="Bob item") == 1
+    alice_item = call(connection, "list_items", "alice")[0][0]
+    bob_item = call(connection, "list_items", "bob")[0][0]
+    assert alice_item != bob_item
+    assert call(connection, "get_item", "bob", id=alice_item) == []
+    assert call(connection, "get_item", "alice", id=bob_item) == []
+    for user in ("alice", "bob"):
+        assert call(connection, "bootstrap_learner", user) == [1, 1]
+        assert call(connection, "bootstrap_learner", user) == [0, 0]
+        assert len(call(connection, "get_learner_bootstrap", user)) == 1
+        assert call(connection, "get_next_lesson", user)[0][0] == "l1"
+    assert call(connection, "get_learner_bootstrap", "mallory") == []
+    assert call(connection, "start_lesson", "mallory", lesson_id="l1") == 0
+    assert call(connection, "start_lesson", "alice", lesson_id="l2") == 0
+    assert call(connection, "start_lesson", "alice", lesson_id="l1") == 1
+    assert call(connection, "start_lesson", "alice", lesson_id="l1") == 0
+    assert call(connection, "start_lesson", "bob", lesson_id="l1") == 1
+    alice_session = call(connection, "get_learner_bootstrap", "alice")[0][9]
+    bob_session = call(connection, "get_learner_bootstrap", "bob")[0][9]
+    assert alice_session != bob_session
+    assert call(connection, "resume_lesson", "bob", session_id=alice_session) == []
+    assert call(connection, "resume_lesson", "alice", session_id=bob_session) == []
+    assert call(connection, "get_learner_bootstrap", "bob")[0][9] == bob_session
+    assert call(connection, "get_learner_bootstrap", "alice")[0][9] == alice_session
+    assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=1000) == 0
+    submit = dict(attempt_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e1", expected_updated_at=1000)
+    assert call(connection, "submit_exercise", "bob", **submit) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", **{**submit, "exercise_id": "e3"}) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", **{**submit, "expected_updated_at": 999}) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", now=1000, **submit) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", now=2000, **{**submit, "attempt_id": "not-a-uuid"}) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", now=2000, **submit) == [1, 1]
+    assert call(connection, "submit_exercise", "alice", now=3000, **submit) == [0, 0]
+    assert call(connection, "submit_exercise", "alice", now=3000, **{**submit, "attempt_id": str(uuid.uuid4())}) == [0, 0]
+    assert connection.execute("SELECT attempt_number,evaluator_policy_version,result_code FROM exercise_attempts WHERE id=?", (submit['attempt_id'],)).fetchone() == (1, "policy-1", "pending_evaluation")
+    assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=2000) == 0
+    assert call(connection, "submit_exercise", "alice", now=3000, attempt_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e2", expected_updated_at=2000) == [1, 1]
+    assert call(connection, "complete_lesson", "bob", session_id=alice_session, expected_updated_at=3000) == 0
+    assert call(connection, "complete_lesson", "alice", session_id=alice_session, expected_updated_at=2000) == 0
+    assert call(connection, "complete_lesson", "alice", now=3000, session_id=alice_session, expected_updated_at=3000) == 0
+    assert call(connection, "complete_lesson", "alice", now=4000, session_id=alice_session, expected_updated_at=3000) == 1
+    assert call(connection, "complete_lesson", "alice", now=5000, session_id=alice_session, expected_updated_at=4000) == 0
+    assert call(connection, "get_next_lesson", "alice")[0][0] == "l2"
+    assert call(connection, "get_next_lesson", "bob")[0][0] == "l1"
+    assert call(connection, "resume_lesson", "alice", session_id=alice_session) == []
+    assert call(connection, "update_preferences", "bob", source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=999) == 0
+    assert call(connection, "update_preferences", "alice", now=1000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=1000) == 0
+    assert call(connection, "update_preferences", "alice", now=5000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=1000) == 1
+    assert call(connection, "update_preferences", "alice", now=6000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=1000) == 0
+    assert call(connection, "update_preferences", "bob", now=6000, source_language="en", target_language="es", region=None, timezone="UTC", reminders_enabled=1, expected_updated_at=5000) == 0
+    assert connection.execute("SELECT reminders_enabled FROM learner_preferences WHERE user_id='bob'").fetchone() == (0,)
+    connection.execute("INSERT INTO review_states (id,user_id,course_id,stable_content_id,source_exercise_id,due_at,created_at,updated_at) VALUES ('rev-a','alice','course','exercise-1','e1',1000,1000,1000)")
+    assert [row[0] for row in call(connection, "list_due_reviews", "alice", now=6000)] == ["rev-a"]
+    assert call(connection, "list_due_reviews", "alice", now=6000, before_due_at=1000, before_id="rev-a") == []
+    assert call(connection, "list_due_reviews", "bob", now=6000) == []
+    review = dict(exposure_id=str(uuid.uuid4()), review_id="rev-a", session_id=alice_session)
+    assert call(connection, "record_review", "bob", now=6000, **review) == 0
+    assert call(connection, "record_review", "alice", now=6000, **{**review, "exposure_id": "not-a-uuid"}) == 0
+    assert call(connection, "record_review", "alice", now=6000, **review) == 1
+    assert call(connection, "record_review", "alice", now=7000, **review) == 0
+    assert call(connection, "record_review", "alice", now=7000, **{**review, "exposure_id": str(uuid.uuid4())}) == 0
+    report = dict(report_id=str(uuid.uuid4()), session_id=alice_session, exercise_id="e1", category="answer")
+    assert call(connection, "create_content_report", "bob", **report) == 0
+    assert call(connection, "create_content_report", "alice", **{**report, "category": "invalid"}) == 0
+    assert call(connection, "create_content_report", "alice", **{**report, "exercise_id": "e3"}) == 0
+    assert call(connection, "create_content_report", "alice", now=6000, **{**report, "report_id": "not-a-uuid"}) == 0
+    assert call(connection, "create_content_report", "alice", now=6000, **report) == 1
+    assert call(connection, "create_content_report", "alice", now=7000, **report) == 0
+    assert len(call(connection, "list_content_reports", "alice")) == 1
+    assert call(connection, "list_content_reports", "bob") == []
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    check_staff_actions(connection, call)
+    check_staff_role_matrix(connection, actions)
+    check_guest_imports(connection, call)
 
 def check_guest_imports(connection, call):
     def count():
@@ -461,20 +511,21 @@ def check_staff_role_matrix(connection, actions):
     # The same app role in a separate app database cannot resolve a foreign
     # report or release ID. No local resource or audit row is created.
     foreign_report = connection.execute("SELECT id FROM content_reports LIMIT 1").fetchone()[0]
-    with sqlite3.connect(":memory:") as other_app:
-        other_app.execute("PRAGMA foreign_keys = ON")
-        apply_migrations(other_app, load_migrations())
-        assert execute(other_app, actions["list_staff_reports"], "support",
-                       roles=("support",), status="resolved") == []
-        assert execute(other_app, actions["update_report_status"], "support",
-                       roles=("support",), now=22000, request_id=str(uuid.uuid4()),
-                       report_id=foreign_report, course_id="course",
-                       new_status="reviewing", expected_updated_at=1000) == [0, 0]
-        assert execute(other_app, actions["retire_course_release"], "moderator",
-                       roles=("moderator",), now=22000, request_id=str(uuid.uuid4()),
-                       release_id="r1", course_id="course",
-                       expected_updated_at=1000) == [0, 0, 0]
-        assert other_app.execute("SELECT COUNT(*) FROM audit_rows").fetchone() == (0,)
+    with tempfile.TemporaryDirectory() as directory:
+        with sqlite3.connect(Path(directory) / "other-app.sqlite") as other_app:
+            other_app.execute("PRAGMA foreign_keys = ON")
+            apply_migrations(other_app, load_migrations())
+            assert execute(other_app, actions["list_staff_reports"], "support",
+                           roles=("support",), status="resolved") == []
+            assert execute(other_app, actions["update_report_status"], "support",
+                           roles=("support",), now=22000, request_id=str(uuid.uuid4()),
+                           report_id=foreign_report, course_id="course",
+                           new_status="reviewing", expected_updated_at=1000) == [0, 0]
+            assert execute(other_app, actions["retire_course_release"], "moderator",
+                           roles=("moderator",), now=22000, request_id=str(uuid.uuid4()),
+                           release_id="r1", course_id="course",
+                           expected_updated_at=1000) == [0, 0, 0]
+            assert other_app.execute("SELECT COUNT(*) FROM audit_rows").fetchone() == (0,)
 
 
 if __name__ == "__main__":
