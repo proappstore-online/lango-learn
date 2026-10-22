@@ -22,6 +22,7 @@
     "lint": "eslint .",
     "check:migrations": "python3 scripts/check_migrations.py",
     "check:actions": "python3 scripts/check_actions.py",
+    "check:languages": "node scripts/check_language_capabilities.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

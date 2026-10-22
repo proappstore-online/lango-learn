@@ -7,9 +7,11 @@ are planned in the [backlog](docs/comprehensive-epics-and-issues.md). The
 boundary and conventions for the upcoming course and data work.
 The [environment/config contract](docs/config-contract.md) defines feature
 defaults, media limits, browser support, and the public/private boundary.
+The [language capability contract](docs/language-capabilities.md) defines
+conservative per-language rules and fixtures for future authored courses.
 
 Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
-CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:migrations`,
+CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:languages`, `pnpm check:migrations`,
 `pnpm check:actions`, `pnpm build`, and `pnpm test:e2e`. The build runs the PAS
 compliance check before compiling the web app. To run the browser checks locally,
 install Chromium once with `pnpm exec playwright install chromium`.
