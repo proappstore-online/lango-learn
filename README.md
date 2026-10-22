@@ -9,6 +9,8 @@ The [environment/config contract](docs/config-contract.md) defines feature
 defaults, media limits, browser support, and the public/private boundary.
 The [language capability contract](docs/language-capabilities.md) defines
 conservative per-language rules and fixtures for future authored courses.
+The [initial D1 data model](docs/data-model.md) describes the additive learning
+tables, ownership keys, version relationships, and migration checks.
 
 Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
 CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:languages`, `pnpm check:migrations`,
