@@ -11,6 +11,8 @@ The [language capability contract](docs/language-capabilities.md) defines
 conservative per-language rules and fixtures for future authored courses.
 The [initial D1 data model](docs/data-model.md) describes the additive learning
 tables, ownership keys, version relationships, and migration checks.
+The [staff role contract](docs/staff-actions.md) defines the four independent
+PAS app grants and their action permissions.
 
 Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
 CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:languages`, `pnpm check:migrations`,
@@ -21,8 +23,9 @@ The [accessibility manual-review checklist](docs/accessibility-manual-review.md)
 tracks device and screen-reader checks that browser automation cannot complete.
 
 The migration gate validates additive, ordered, idempotent D1 SQL in a fresh
-SQLite database. The action gate executes every current `mcp.json` action as
-two learners and rejects untested new actions. The browser checks exercise the
+SQLite database. The action gate executes every current `mcp.json` action with
+synthetic learners and staff grants, and rejects untested new actions. The
+browser checks exercise the
 signed-out ProShell entry on `/` and `/about`; authenticated lesson flows will
 need their own fixtures when they are added.
 

@@ -1,4 +1,4 @@
-# Staff action contract (LNG-022)
+# Staff roles and action contract (LNG-022, LNG-024)
 
 PAS app roles are the authority for staff actions. They are checked by the
 platform action executor before SQL runs; no request parameter supplies or
@@ -15,10 +15,34 @@ audit actor. They never return answer text, audio, or private learner progress.
 | `moderator` | `publish_course_version`, `retire_course_release` | Control the active release. |
 | `support` | `list_staff_reports`, `update_report_status` | Read and triage reports across learners. |
 
-The PAS app-role grant is independent of platform and app-team roles. The
-follow-up role configuration issue LNG-024 owns assignment of these grants.
-The local action gate models the PAS role check explicitly. A role from a
-caller parameter is ignored because no action declares such a parameter.
+The [role contract](../contracts/staff-roles.json) is the complete action
+allowlist. Each action in `mcp.json` requires exactly one of these PAS **app**
+roles. Grants are independent and additive: a person with two grants gets the
+union of those actions; a `curriculum_editor` cannot approve a version and a
+`content_reviewer` cannot author one. `support` does not gain publication
+control, and `moderator` does not gain the learner report queue. Ordinary
+signed-in members have none of these permissions.
+
+Assign or revoke each grant for a known PAS user in the app's Settings → Access
+screen (or the equivalent owner-controlled `app.roles.assign` /
+`app.roles.revoke` operation). Do not seed staff grants in D1 migrations or
+derive them from a platform `creator`/`admin` role, app-team membership, email,
+or a browser claim. The assigning operator verifies the person's identity and
+grants only the job-specific role; mixed duties require separate grants.
+Revocation takes effect at the next server action authorization check. The
+`mcp.json` `auth.app_roles` declaration is the executable role configuration;
+the platform checks its live app-role assignment before SQL. The action has no
+role parameter. `:__user_id` comes from that same authenticated session and
+is recorded as the audit actor. The local test executor supplies synthetic
+session grants to model the PAS gate and never accepts request data as grants.
+
+This app currently has one app-isolated D1 database, so all staff course and
+report actions operate within that app. There is no cross-app ID lookup or
+client-selected tenant. If a future change introduces organisations or
+workspaces within this app, every staff action must also check that tenant's
+membership in SQL; an app role by itself would not grant access to every
+tenant. The synthetic matrix checks that foreign IDs and unrelated roles do
+not modify local rows.
 
 The lifecycle is `draft → review → approved → published → retired`; a reviewer
 may return `review → draft`. Authoring SQL requires a draft version and an
@@ -50,7 +74,8 @@ from mutating another course's report. No learner ownership is inferred from
 a client-supplied ID.
 
 `pnpm check:actions` executes the manifest against the committed migrations
-with foreign keys enabled. Its synthetic fixtures test each role, denied
-access, stale and replayed requests, duplicate authoring, course mismatch,
-published immutability, report ownership, audit rows, and retirement. There
-is no original course content or media in this change.
+with foreign keys enabled. Its synthetic fixtures test each role, every denied
+cross-role path, mixed grants, forged client claims, signed-out callers, stale
+and replayed requests, duplicate authoring, course mismatch, published
+immutability, report ownership, audit rows, failed-batch rollback, and
+retirement. There is no original course content or media in this change.

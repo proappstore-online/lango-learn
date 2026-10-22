@@ -21,14 +21,10 @@ EXPECTED = {
     "import_guest_lesson", "get_guest_import_receipt", "get_guest_lesson_summary",
 }
 
-STAFF_ROLES = {
-    "create_course": "curriculum_editor", "create_course_version": "curriculum_editor",
-    "create_lesson": "curriculum_editor", "create_exercise": "curriculum_editor",
-    "submit_version_for_review": "curriculum_editor", "return_version_to_draft": "content_reviewer",
-    "approve_course_version": "content_reviewer", "publish_course_version": "moderator",
-    "retire_course_release": "moderator", "list_staff_reports": "support",
-    "update_report_status": "support",
-}
+ROLE_ACTIONS = json.loads((ROOT / "contracts/staff-roles.json").read_text())
+assert set(ROLE_ACTIONS) == {"curriculum_editor", "content_reviewer", "support", "moderator"}
+STAFF_ROLES = {action: role for role, actions in ROLE_ACTIONS.items() for action in actions}
+assert sum(map(len, ROLE_ACTIONS.values())) == len(STAFF_ROLES)
 
 
 def execute(connection, tool, user, *, now=1000, roles=(), **params):
@@ -61,7 +57,13 @@ def validate(tools):
             auth = tool.get("auth", {})
             assert auth.get("required") is True, name
             assert auth.get("app_roles") == [STAFF_ROLES[name]], name
+            assert "platform_roles" not in auth, name
             assert auth.get("caller_unscoped", {}).get("reason"), name
+            assert "role" not in tool.get("params", {}), name
+            assert "roles" not in tool.get("params", {}), name
+            assert "app_roles" not in tool.get("params", {}), name
+        else:
+            assert not tool.get("auth", {}).get("app_roles"), name
         assert tool["operation"] in {"query", "execute", "batch"}, name
         statements = tool.get("statements", [tool.get("sql")])
         assert statements and len(statements) <= 25
@@ -164,6 +166,7 @@ def main():
         assert call(connection, "list_content_reports", "bob") == []
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         check_staff_actions(connection, call)
+        check_staff_role_matrix(connection, actions)
         check_guest_imports(connection, call)
     print(f"Action authorization gate passed: {len(tools)} actions, ownership, replay and stale-write fixtures")
 
@@ -368,6 +371,110 @@ def check_staff_actions(connection, call):
     assert all(row[0] and row[1] for row in connection.execute(
         "SELECT actor_user_id,detail_json FROM audit_rows"))
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def check_staff_role_matrix(connection, actions):
+    """The platform role projection, not caller data or team status, gates every action."""
+    def snapshot():
+        return tuple(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                     for table in ("courses", "course_versions", "lessons", "exercises",
+                                   "course_releases", "content_reports", "audit_rows"))
+
+    before = snapshot()
+    identities = {
+        "member": (),
+        "platform-admin": ("admin",),
+        "team-owner": ("owner",),
+        **{role: (role,) for role in ROLE_ACTIONS},
+    }
+    for name, required in STAFF_ROLES.items():
+        tool = actions[name]
+        for actor, projected_roles in identities.items():
+            if required in projected_roles:
+                continue
+            try:
+                execute(connection, tool, actor, roles=projected_roles,
+                        request_id=str(uuid.uuid4()), role=required,
+                        app_roles=[required], platform_role="admin", team_role="owner")
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError(f"{actor} crossed {required} boundary on {name}")
+            assert snapshot() == before, (name, actor)
+        try:
+            execute(connection, tool, None, roles=(required,), request_id=str(uuid.uuid4()))
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError(f"signed-out caller used {name}")
+        assert snapshot() == before, name
+
+    # Multiple grants combine without turning one grant into another. The mixed
+    # actor can use support's read action, while an editor alone cannot.
+    mixed = ("curriculum_editor", "support")
+    reports = execute(connection, actions["list_staff_reports"], "mixed", roles=mixed,
+                      status="resolved")
+    assert reports
+    try:
+        execute(connection, actions["approve_course_version"], "mixed", roles=mixed,
+                request_id=str(uuid.uuid4()))
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("mixed editor/support grant acquired reviewer permission")
+    assert snapshot() == before
+
+    # A failure after an audit insert must roll the whole staff batch back.
+    class InterruptedBatch:
+        def __init__(self, db):
+            self.db = db
+            self.statements = 0
+        def __enter__(self):
+            self.db.__enter__()
+            return self
+        def __exit__(self, *args):
+            return self.db.__exit__(*args)
+        def execute(self, sql, bindings):
+            self.statements += 1
+            if self.statements == 2:
+                raise sqlite3.OperationalError("synthetic staff write failure")
+            return self.db.execute(sql, bindings)
+
+    course_id, request_id = str(uuid.uuid4()), str(uuid.uuid4())
+    values = dict(request_id=request_id, course_id=course_id, source_language="en",
+                  target_language="es", title="Failure fixture")
+    try:
+        execute(InterruptedBatch(connection), actions["create_course"], "mixed",
+                roles=mixed, now=20000, **values)
+    except sqlite3.OperationalError:
+        pass
+    else:
+        raise AssertionError("interrupted staff batch unexpectedly succeeded")
+    assert snapshot() == before
+    assert execute(connection, actions["create_course"], "mixed", roles=mixed,
+                   now=20000, **values) == [1, 1]
+    assert execute(connection, actions["create_course"], "mixed", roles=mixed,
+                   now=21000, **values) == [0, 0]
+    assert connection.execute("SELECT actor_user_id FROM audit_rows WHERE id=?",
+                              (request_id,)).fetchone() == ("mixed",)
+
+    # The same app role in a separate app database cannot resolve a foreign
+    # report or release ID. No local resource or audit row is created.
+    foreign_report = connection.execute("SELECT id FROM content_reports LIMIT 1").fetchone()[0]
+    with sqlite3.connect(":memory:") as other_app:
+        other_app.execute("PRAGMA foreign_keys = ON")
+        apply_migrations(other_app, load_migrations())
+        assert execute(other_app, actions["list_staff_reports"], "support",
+                       roles=("support",), status="resolved") == []
+        assert execute(other_app, actions["update_report_status"], "support",
+                       roles=("support",), now=22000, request_id=str(uuid.uuid4()),
+                       report_id=foreign_report, course_id="course",
+                       new_status="reviewing", expected_updated_at=1000) == [0, 0]
+        assert execute(other_app, actions["retire_course_release"], "moderator",
+                       roles=("moderator",), now=22000, request_id=str(uuid.uuid4()),
+                       release_id="r1", course_id="course",
+                       expected_updated_at=1000) == [0, 0, 0]
+        assert other_app.execute("SELECT COUNT(*) FROM audit_rows").fetchone() == (0,)
 
 
 if __name__ == "__main__":

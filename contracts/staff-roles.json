@@ -1,0 +1,21 @@
+{
+  "curriculum_editor": [
+    "create_course",
+    "create_course_version",
+    "create_lesson",
+    "create_exercise",
+    "submit_version_for_review"
+  ],
+  "content_reviewer": [
+    "return_version_to_draft",
+    "approve_course_version"
+  ],
+  "support": [
+    "list_staff_reports",
+    "update_report_status"
+  ],
+  "moderator": [
+    "publish_course_version",
+    "retire_course_release"
+  ]
+}
