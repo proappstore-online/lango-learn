@@ -46,6 +46,239 @@
         }
       },
       "requires_auth": true
+    },
+    {
+      "name": "bootstrap_learner",
+      "description": "Create the caller profile and default preferences exactly once",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO learner_profiles (id,user_id,created_at,updated_at) SELECT :__uuid,:__user_id,:__now,:__now WHERE NOT EXISTS (SELECT 1 FROM learner_profiles WHERE user_id=:__user_id)",
+        "INSERT OR IGNORE INTO learner_preferences (id,user_id,created_at,updated_at) SELECT :__uuid,:__user_id,:__now,:__now WHERE NOT EXISTS (SELECT 1 FROM learner_preferences WHERE user_id=:__user_id) AND EXISTS (SELECT 1 FROM learner_profiles WHERE user_id=:__user_id)"
+      ],
+      "params": {},
+      "requires_auth": true
+    },
+    {
+      "name": "get_learner_bootstrap",
+      "description": "Read the caller profile, preferences and active lesson",
+      "operation": "query",
+      "sql": "SELECT p.id AS profile_id,p.display_name,p.created_at AS profile_created_at, q.id AS preference_id,q.source_language,q.target_language,q.region,q.timezone,q.reminders_enabled, s.id AS session_id,s.course_version_id,s.lesson_id,s.status AS session_status,s.last_exercise_position FROM learner_profiles p LEFT JOIN learner_preferences q ON q.user_id=p.user_id LEFT JOIN learning_sessions s ON s.id=(SELECT id FROM learning_sessions WHERE user_id=:__user_id AND status='active' ORDER BY updated_at DESC,id DESC LIMIT 1) WHERE p.user_id=:__user_id LIMIT 1",
+      "params": {},
+      "requires_auth": true
+    },
+    {
+      "name": "get_next_lesson",
+      "description": "Return the oldest uncompleted lesson in an active published course release",
+      "operation": "query",
+      "sql": "SELECT l.id AS lesson_id,l.course_version_id,l.content_version,l.position,l.title, c.id AS course_id,c.source_language,c.target_language,r.release_number FROM course_releases r JOIN course_versions v ON v.id=r.course_version_id AND v.course_id=r.course_id JOIN courses c ON c.id=r.course_id JOIN lessons l ON l.course_version_id=v.id WHERE r.status='active' AND v.status='published' AND EXISTS (SELECT 1 FROM learner_profiles p WHERE p.user_id=:__user_id) AND NOT EXISTS (SELECT 1 FROM learning_sessions done WHERE done.user_id=:__user_id AND done.lesson_id=l.id AND done.status='completed') ORDER BY r.created_at,r.id,l.position,l.id LIMIT 1",
+      "params": {},
+      "requires_auth": true
+    },
+    {
+      "name": "start_lesson",
+      "description": "Start a released lesson once; concurrent starts cannot create duplicate active sessions",
+      "operation": "execute",
+      "sql": "INSERT OR IGNORE INTO learning_sessions (id,user_id,course_version_id,lesson_id,status,last_exercise_position,started_at,created_at,updated_at) SELECT :__uuid,:__user_id,l.course_version_id,l.id,'active',0,:__now,:__now,:__now FROM lessons l JOIN course_versions v ON v.id=l.course_version_id JOIN course_releases r ON r.course_version_id=v.id AND r.course_id=v.course_id WHERE l.id=:lesson_id AND r.status='active' AND v.status='published' AND EXISTS (SELECT 1 FROM learner_profiles p WHERE p.user_id=:__user_id) AND NOT EXISTS (SELECT 1 FROM learning_sessions s WHERE s.user_id=:__user_id AND s.lesson_id=l.id AND s.status IN ('active','completed')) AND NOT EXISTS (SELECT 1 FROM lessons earlier WHERE earlier.course_version_id=l.course_version_id AND earlier.position<l.position AND NOT EXISTS (SELECT 1 FROM learning_sessions done WHERE done.user_id=:__user_id AND done.lesson_id=earlier.id AND done.status='completed'))",
+      "params": {
+        "lesson_id": {
+          "type": "string",
+          "description": "Published lesson ID"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "resume_lesson",
+      "description": "Read an owned active lesson snapshot and checkpoint",
+      "operation": "query",
+      "sql": "SELECT s.id,s.course_version_id,s.lesson_id,s.last_exercise_position,s.started_at,s.updated_at, l.title,l.content_version,v.package_version FROM learning_sessions s JOIN lessons l ON l.id=s.lesson_id JOIN course_versions v ON v.id=s.course_version_id WHERE s.id=:session_id AND s.user_id=:__user_id AND s.status='active' LIMIT 1",
+      "params": {
+        "session_id": {
+          "type": "string",
+          "description": "Session ID"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "submit_exercise",
+      "description": "Record an ungraded exercise attempt and advance its owned session checkpoint atomically",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO exercise_attempts (id,user_id,session_id,lesson_id,exercise_id,attempt_number,evaluator_policy_version,result_code,created_at) SELECT :attempt_id,:__user_id,s.id,s.lesson_id,e.id, (SELECT COUNT(*)+1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=s.id AND a.exercise_id=e.id), e.evaluator_policy_version,'pending_evaluation',:__now FROM learning_sessions s JOIN exercises e ON e.lesson_id=s.lesson_id WHERE s.id=:session_id AND s.user_id=:__user_id AND s.status='active' AND s.updated_at=:expected_updated_at AND e.id=:exercise_id AND e.position=s.last_exercise_position AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id) AND lower(:attempt_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'",
+        "UPDATE learning_sessions SET last_exercise_position=last_exercise_position+1,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.id=:attempt_id AND a.user_id=:__user_id AND a.session_id=:session_id AND a.exercise_id=:exercise_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM exercises e WHERE e.id=:exercise_id AND e.lesson_id=learning_sessions.lesson_id AND e.position=learning_sessions.last_exercise_position)"
+      ],
+      "params": {
+        "attempt_id": {
+          "type": "string",
+          "description": "Stable UUID idempotency key for this attempt"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Owned active session ID"
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Exercise in the pinned lesson"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "Checkpoint timestamp from resume_lesson"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "complete_lesson",
+      "description": "Complete an owned session after every exercise has an attempt",
+      "operation": "execute",
+      "sql": "UPDATE learning_sessions SET status='completed',completed_at=:__now,updated_at=:__now WHERE id=:session_id AND user_id=:__user_id AND status='active' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id) AND NOT EXISTS (SELECT 1 FROM exercises e WHERE e.lesson_id=learning_sessions.lesson_id AND NOT EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=learning_sessions.id AND a.exercise_id=e.id))",
+      "params": {
+        "session_id": {
+          "type": "string",
+          "description": "Owned session ID"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "Checkpoint timestamp from resume_lesson"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "list_due_reviews",
+      "description": "List caller review states due now with a bounded keyset cursor",
+      "operation": "query",
+      "sql": "SELECT rs.id,rs.course_id,rs.stable_content_id,rs.source_exercise_id,rs.due_at,rs.interval_days,rs.review_count,rs.updated_at FROM review_states rs WHERE rs.user_id=:__user_id AND rs.due_at<=:__now AND (:before_due_at IS NULL OR (rs.due_at,rs.id)>(:before_due_at,:before_id)) ORDER BY rs.due_at,rs.id LIMIT :limit",
+      "params": {
+        "before_due_at": {
+          "type": "integer",
+          "optional": true,
+          "description": "Cursor due time"
+        },
+        "before_id": {
+          "type": "string",
+          "description": "Cursor review ID",
+          "optional": true
+        },
+        "limit": {
+          "type": "integer",
+          "optional": true,
+          "default": 20,
+          "max": 100,
+          "description": "Page size"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "record_review",
+      "description": "Record a due review exposure only after an owned attempt on its source exercise",
+      "operation": "execute",
+      "sql": "INSERT OR IGNORE INTO learning_exposures (id,user_id,session_id,lesson_id,exercise_id,exposure_kind,created_at) SELECT :exposure_id,:__user_id,s.id,s.lesson_id,rs.source_exercise_id,'review',:__now FROM review_states rs JOIN exercises e ON e.id=rs.source_exercise_id JOIN learning_sessions s ON s.lesson_id=e.lesson_id AND s.user_id=:__user_id WHERE rs.id=:review_id AND rs.user_id=:__user_id AND rs.due_at<=:__now AND s.id=:session_id AND s.status IN ('active','completed') AND EXISTS (SELECT 1 FROM exercise_attempts a WHERE a.user_id=:__user_id AND a.session_id=s.id AND a.exercise_id=e.id AND a.created_at>=rs.due_at) AND NOT EXISTS (SELECT 1 FROM learning_exposures x WHERE x.id=:exposure_id) AND lower(:exposure_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'",
+      "params": {
+        "exposure_id": {
+          "type": "string",
+          "description": "Stable UUID idempotency key"
+        },
+        "review_id": {
+          "type": "string",
+          "description": "Due review ID"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Owned session ID"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "update_preferences",
+      "description": "Update caller preferences with a stale-write guard",
+      "operation": "execute",
+      "sql": "UPDATE learner_preferences SET source_language=:source_language,target_language=:target_language, region=:region,timezone=:timezone,reminders_enabled=:reminders_enabled,updated_at=:__now WHERE user_id=:__user_id AND updated_at=:expected_updated_at AND :reminders_enabled IN (0,1)",
+      "params": {
+        "source_language": {
+          "type": "string",
+          "description": "Source language tag",
+          "optional": true
+        },
+        "target_language": {
+          "type": "string",
+          "description": "Target language tag",
+          "optional": true
+        },
+        "region": {
+          "type": "string",
+          "description": "Region",
+          "optional": true
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone",
+          "optional": true
+        },
+        "reminders_enabled": {
+          "type": "integer",
+          "description": "Zero or one"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "Current preference timestamp"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "create_content_report",
+      "description": "Report an exercise from an owned session without sending answer text",
+      "operation": "execute",
+      "sql": "INSERT OR IGNORE INTO content_reports (id,user_id,exercise_id,category,status,created_at,updated_at) SELECT :report_id,:__user_id,e.id,:category,'open',:__now,:__now FROM learning_sessions s JOIN exercises e ON e.lesson_id=s.lesson_id WHERE s.id=:session_id AND s.user_id=:__user_id AND e.id=:exercise_id AND :category IN ('answer','wording','audio','translation','explanation','accessibility','other') AND NOT EXISTS (SELECT 1 FROM content_reports r WHERE r.id=:report_id) AND lower(:report_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'",
+      "params": {
+        "report_id": {
+          "type": "string",
+          "description": "Stable UUID idempotency key"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Owned session ID"
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Exercise in the session"
+        },
+        "category": {
+          "type": "string",
+          "description": "Report category"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "list_content_reports",
+      "description": "List caller reports with bounded keyset pagination",
+      "operation": "query",
+      "sql": "SELECT id,exercise_id,category,status,created_at,updated_at FROM content_reports WHERE user_id=:__user_id AND (:before_created_at IS NULL OR (created_at,id)<(:before_created_at,:before_id)) ORDER BY created_at DESC,id DESC LIMIT :limit",
+      "params": {
+        "before_created_at": {
+          "type": "integer",
+          "optional": true,
+          "description": "Cursor creation time"
+        },
+        "before_id": {
+          "type": "string",
+          "description": "Cursor report ID",
+          "optional": true
+        },
+        "limit": {
+          "type": "integer",
+          "optional": true,
+          "default": 20,
+          "max": 100,
+          "description": "Page size"
+        }
+      },
+      "requires_auth": true
     }
   ]
 }

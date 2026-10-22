@@ -42,7 +42,7 @@ def check_learning_model(connection):
         "idx_sessions_resume", "idx_attempts_history", "idx_exposures_history",
         "idx_review_due", "idx_reports_queue", "idx_reports_user",
         "idx_active_release", "idx_releases_history", "idx_audit_resource",
-        "idx_audit_actor",
+        "idx_audit_actor", "idx_one_active_lesson_session", "idx_one_review_exposure",
     }
     indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert required_indexes <= indexes, f"missing learning indexes: {required_indexes - indexes}"
