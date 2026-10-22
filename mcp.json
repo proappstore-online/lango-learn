@@ -279,6 +279,459 @@
         }
       },
       "requires_auth": true
+    },
+    {
+      "name": "create_course",
+      "description": "Create an original course shell and audit the author",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course',:course_id,'create',json_object('course_id',:course_id),:__now WHERE lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND lower(:course_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND NOT EXISTS (SELECT 1 FROM courses WHERE id=:course_id) AND length(trim(:title))>0 AND length(trim(:source_language))>0 AND length(trim(:target_language))>0 AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO courses (id,source_language,target_language,title,created_at,updated_at) SELECT :course_id,:source_language,:target_language,:title,:__now,:__now WHERE EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='course' AND a.resource_id=:course_id AND a.created_at=:__now) AND NOT EXISTS (SELECT 1 FROM courses WHERE id=:course_id)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "source_language": {
+          "type": "string",
+          "description": "source language"
+        },
+        "target_language": {
+          "type": "string",
+          "description": "target language"
+        },
+        "title": {
+          "type": "string",
+          "description": "title"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "create_course_version",
+      "description": "Create one draft course snapshot and audit it",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_version',:version_id,'create',json_object('course_id',:course_id,'content_version',:content_version,'package_version',:package_version),:__now WHERE lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND lower(:version_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND :content_version=(SELECT COALESCE(MAX(content_version),-1)+1 FROM course_versions WHERE course_id=:course_id) AND length(trim(:package_version))>0 AND EXISTS (SELECT 1 FROM courses WHERE id=:course_id) AND NOT EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id OR (course_id=:course_id AND content_version=:content_version)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO course_versions (id,course_id,content_version,package_version,status,created_at,updated_at) SELECT :version_id,:course_id,:content_version,:package_version,'draft',:__now,:__now WHERE EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='course_version' AND a.resource_id=:version_id AND a.created_at=:__now) AND :content_version=(SELECT COALESCE(MAX(content_version),-1)+1 FROM course_versions WHERE course_id=:course_id) AND NOT EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id OR (course_id=:course_id AND content_version=:content_version))"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "content_version": {
+          "type": "integer",
+          "description": "content version"
+        },
+        "package_version": {
+          "type": "string",
+          "description": "package version"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "create_lesson",
+      "description": "Add a lesson only to a current draft snapshot and audit it",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'lesson',:lesson_id,'create',json_object('version_id',:version_id,'stable_content_id',:stable_content_id,'position',:position),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND lower(:lesson_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND :position>=0 AND length(trim(:title))>0 AND length(trim(:stable_content_id))>0 AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.status='draft' AND v.content_version=:content_version AND v.updated_at=:expected_updated_at) AND NOT EXISTS (SELECT 1 FROM lessons WHERE id=:lesson_id OR (course_version_id=:version_id AND (stable_content_id=:stable_content_id OR position=:position))) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO lessons (id,course_version_id,stable_content_id,content_version,position,title,created_at) SELECT :lesson_id,:version_id,:stable_content_id,:content_version,:position,:title,:__now WHERE EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='lesson' AND a.resource_id=:lesson_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND content_version=:content_version AND updated_at=:expected_updated_at) AND NOT EXISTS (SELECT 1 FROM lessons WHERE id=:lesson_id OR (course_version_id=:version_id AND (stable_content_id=:stable_content_id OR position=:position)))",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='lesson' AND a.resource_id=:lesson_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM lessons WHERE id=:lesson_id AND course_version_id=:version_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "stable_content_id": {
+          "type": "string",
+          "description": "stable content id"
+        },
+        "content_version": {
+          "type": "integer",
+          "description": "content version"
+        },
+        "position": {
+          "type": "integer",
+          "description": "position"
+        },
+        "title": {
+          "type": "string",
+          "description": "title"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "create_exercise",
+      "description": "Add an exercise only to a current draft snapshot and audit it",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'exercise',:exercise_id,'create',json_object('lesson_id',:lesson_id,'stable_content_id',:stable_content_id,'position',:position,'evaluator_policy_version',:evaluator_policy_version),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND lower(:exercise_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND :position>=0 AND length(trim(:kind))>0 AND length(trim(:evaluator_policy_version))>0 AND length(trim(:stable_content_id))>0 AND EXISTS (SELECT 1 FROM lessons l JOIN course_versions v ON v.id=l.course_version_id WHERE l.id=:lesson_id AND v.status='draft' AND v.content_version=:content_version AND v.updated_at=:expected_updated_at) AND NOT EXISTS (SELECT 1 FROM exercises WHERE id=:exercise_id OR (lesson_id=:lesson_id AND (stable_content_id=:stable_content_id OR position=:position))) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO exercises (id,lesson_id,stable_content_id,content_version,position,kind,evaluator_policy_version,created_at) SELECT :exercise_id,:lesson_id,:stable_content_id,:content_version,:position,:kind,:evaluator_policy_version,:__now WHERE EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='exercise' AND a.resource_id=:exercise_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM lessons l JOIN course_versions v ON v.id=l.course_version_id WHERE l.id=:lesson_id AND v.status='draft' AND v.content_version=:content_version AND v.updated_at=:expected_updated_at) AND NOT EXISTS (SELECT 1 FROM exercises WHERE id=:exercise_id OR (lesson_id=:lesson_id AND (stable_content_id=:stable_content_id OR position=:position)))",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=(SELECT course_version_id FROM lessons WHERE id=:lesson_id) AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='create' AND a.resource_type='exercise' AND a.resource_id=:exercise_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM exercises WHERE id=:exercise_id AND lesson_id=:lesson_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "exercise id"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "stable_content_id": {
+          "type": "string",
+          "description": "stable content id"
+        },
+        "content_version": {
+          "type": "integer",
+          "description": "content version"
+        },
+        "position": {
+          "type": "integer",
+          "description": "position"
+        },
+        "kind": {
+          "type": "string",
+          "description": "kind"
+        },
+        "evaluator_policy_version": {
+          "type": "string",
+          "description": "evaluator policy version"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "submit_version_for_review",
+      "description": "Move a course version from draft to review with audit",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_version',:version_id,'submit_review',json_object('from','draft','to','review'),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE course_versions SET status='review',updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='submit_review' AND a.resource_type='course_version' AND a.resource_id=:version_id AND a.created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "approve_course_version",
+      "description": "Move a course version from review to approved with audit",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_version',:version_id,'approve',json_object('from','review','to','approved'),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.status='review' AND v.updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE course_versions SET status='approved',updated_at=:__now WHERE id=:version_id AND status='review' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='approve' AND a.resource_type='course_version' AND a.resource_id=:version_id AND a.created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "content_reviewer"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "return_version_to_draft",
+      "description": "Move a course version from review to draft with audit",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_version',:version_id,'return_draft',json_object('from','review','to','draft'),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.status='review' AND v.updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE course_versions SET status='draft',updated_at=:__now WHERE id=:version_id AND status='review' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='return_draft' AND a.resource_type='course_version' AND a.resource_id=:version_id AND a.created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "content_reviewer"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "publish_course_version",
+      "description": "Publish an approved immutable snapshot as the sole active release with an audit record",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_release',:release_id,'publish',json_object('course_id',:course_id,'version_id',:version_id,'from','approved','to','published'),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND lower(:release_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.course_id=:course_id AND v.status='approved' AND v.updated_at=:expected_updated_at AND v.content_version>COALESCE((SELECT av.content_version FROM course_releases ar JOIN course_versions av ON av.id=ar.course_version_id WHERE ar.course_id=:course_id AND ar.status='active'),-1) AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM course_releases WHERE id=:release_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE course_releases SET status='superseded',updated_at=:__now WHERE course_id=:course_id AND status='active' AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='publish' AND a.resource_type='course_release' AND a.resource_id=:release_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.course_id=:course_id AND v.status='approved' AND v.updated_at=:expected_updated_at AND v.content_version>COALESCE((SELECT av.content_version FROM course_releases ar JOIN course_versions av ON av.id=ar.course_version_id WHERE ar.course_id=:course_id AND ar.status='active'),-1) AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM course_releases WHERE id=:release_id)",
+        "INSERT INTO course_releases (id,course_id,course_version_id,release_number,status,published_by_user_id,created_at,updated_at) SELECT :release_id,:course_id,:version_id,COALESCE((SELECT MAX(release_number)+1 FROM course_releases WHERE course_id=:course_id),1),'active',:__user_id,:__now,:__now WHERE EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='publish' AND a.resource_type='course_release' AND a.resource_id=:release_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions v WHERE v.id=:version_id AND v.course_id=:course_id AND v.status='approved' AND v.updated_at=:expected_updated_at AND v.content_version>COALESCE((SELECT av.content_version FROM course_releases ar JOIN course_versions av ON av.id=ar.course_version_id WHERE ar.course_id=:course_id AND ar.status='active'),-1) AND EXISTS (SELECT 1 FROM lessons l JOIN exercises e ON e.lesson_id=l.id WHERE l.course_version_id=v.id)) AND NOT EXISTS (SELECT 1 FROM course_releases WHERE id=:release_id)",
+        "UPDATE course_versions SET status='published',updated_at=:__now WHERE id=:version_id AND course_id=:course_id AND status='approved' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='publish' AND a.resource_type='course_release' AND a.resource_id=:release_id AND a.created_at=:__now) AND EXISTS (SELECT 1 FROM course_releases WHERE id=:release_id AND course_version_id=:version_id AND status='active')"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "release_id": {
+          "type": "string",
+          "description": "release id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "moderator"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "retire_course_release",
+      "description": "Retire the active release while preserving its historical snapshot and audit",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_release',:release_id,'retire',json_object('course_id',:course_id,'from','active','to','retired'),:__now WHERE :__now>:expected_updated_at AND lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM course_releases r WHERE r.id=:release_id AND r.course_id=:course_id AND r.status='active' AND r.updated_at=:expected_updated_at) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE course_releases SET status='retired',updated_at=:__now WHERE id=:release_id AND course_id=:course_id AND status='active' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='retire' AND a.resource_type='course_release' AND a.resource_id=:release_id AND a.created_at=:__now)",
+        "UPDATE course_versions SET status='retired',updated_at=:__now WHERE id=(SELECT course_version_id FROM course_releases WHERE id=:release_id AND course_id=:course_id AND status='retired') AND status='published' AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='retire' AND a.resource_type='course_release' AND a.resource_id=:release_id AND a.created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "release_id": {
+          "type": "string",
+          "description": "release id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "moderator"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
+    },
+    {
+      "name": "list_staff_reports",
+      "description": "Read a bounded status-filtered report queue for support staff",
+      "operation": "query",
+      "sql": "SELECT r.id,r.user_id,r.exercise_id,r.category,r.status,r.created_at,r.updated_at,e.lesson_id,l.course_version_id FROM content_reports r JOIN exercises e ON e.id=r.exercise_id JOIN lessons l ON l.id=e.lesson_id WHERE r.status=:status AND (:before_created_at IS NULL OR (r.created_at,r.id)<(:before_created_at,:before_id)) ORDER BY r.created_at DESC,r.id DESC LIMIT :limit",
+      "params": {
+        "status": {
+          "type": "string",
+          "description": "One of open, reviewing, resolved, dismissed"
+        },
+        "before_created_at": {
+          "type": "integer",
+          "description": "before created at",
+          "optional": true
+        },
+        "before_id": {
+          "type": "string",
+          "description": "before id",
+          "optional": true
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit",
+          "default": 20,
+          "max": 100
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "support"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to the shared report queue in this app-isolated D1 database."
+        }
+      }
+    },
+    {
+      "name": "update_report_status",
+      "description": "Advance a learner report through triage with a subject-linked audit row",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,(SELECT user_id FROM content_reports WHERE :__now>:expected_updated_at AND id=:report_id),'content_report',:report_id,'triage',json_object('course_id',:course_id,'from',(SELECT status FROM content_reports WHERE id=:report_id),'to',:new_status),:__now WHERE lower(:request_id) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' AND EXISTS (SELECT 1 FROM content_reports r JOIN exercises e ON e.id=r.exercise_id JOIN lessons l ON l.id=e.lesson_id JOIN course_versions v ON v.id=l.course_version_id WHERE r.id=:report_id AND v.course_id=:course_id AND r.updated_at=:expected_updated_at AND ((r.status='open' AND :new_status='reviewing') OR (r.status='reviewing' AND :new_status IN ('resolved','dismissed')))) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE content_reports SET status=:new_status,updated_at=:__now WHERE id=:report_id AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM content_reports r JOIN exercises e ON e.id=r.exercise_id JOIN lessons l ON l.id=e.lesson_id JOIN course_versions v ON v.id=l.course_version_id WHERE r.id=:report_id AND v.course_id=:course_id AND r.updated_at=:expected_updated_at AND ((r.status='open' AND :new_status='reviewing') OR (r.status='reviewing' AND :new_status IN ('resolved','dismissed')))) AND EXISTS (SELECT 1 FROM audit_rows a WHERE a.id=:request_id AND a.actor_user_id=:__user_id AND a.action='triage' AND a.resource_type='content_report' AND a.resource_id=:report_id AND a.created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "report_id": {
+          "type": "string",
+          "description": "report id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "new_status": {
+          "type": "string",
+          "description": "new status"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "support"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
+        }
+      }
     }
   ]
 }
