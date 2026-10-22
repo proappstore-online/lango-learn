@@ -22,6 +22,12 @@ EXPECTED = {
     "import_guest_lesson", "get_guest_import_receipt", "get_guest_lesson_summary",
     "create_course_locale", "create_course_map", "create_course_unit",
     "place_lesson_in_unit", "add_lesson_prerequisite",
+    "create_objective", "create_lexeme", "create_phrase", "create_grammar_point",
+    "create_pronunciation_pattern", "create_register_tag", "create_confusable_pair",
+    "link_objective_lexeme", "link_objective_phrase", "link_objective_grammar_point",
+    "link_objective_pronunciation_pattern", "link_objective_register_tag",
+    "link_objective_confusable_pair", "add_objective_prerequisite",
+    "update_objective", "read_objective_graph",
 }
 
 ROLE_ACTIONS = json.loads((ROOT / "contracts/staff-roles.json").read_text())
@@ -117,6 +123,7 @@ def main():
                     assert connection.execute("SELECT title FROM items WHERE id='legacy'").fetchone() == ("Before upgrade",)
                 run_contracts(connection, actions)
                 check_course_map(connection, actions)
+                check_objective_graph(connection, actions)
             # Reopen the file so the result is checked as durable data.
             with sqlite3.connect(path) as persisted:
                 persisted.execute("PRAGMA foreign_keys = ON")
@@ -128,6 +135,7 @@ def main():
                 assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='active'").fetchone() == (1,)
                 assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='alice'").fetchone() == (2,)
                 assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='bob'").fetchone() == (0,)
+                assert persisted.execute("SELECT COUNT(*) FROM objective WHERE course_version_id='graph-v1'").fetchone() == (2,)
     print(f"Action authorization gate passed: {len(tools)} actions on fresh and upgraded persisted databases")
 
 
@@ -643,6 +651,163 @@ def check_course_map(connection, actions):
     connection.execute("UPDATE course_releases SET status='retired',updated_at=9000 WHERE id='map-release'")
     assert connection.execute("SELECT release_state FROM course_map_release_state WHERE course_id='map-course'").fetchone() == ("deprecated",)
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+def check_objective_graph(connection, actions):
+    """Exercise every authoring edge against persisted, version-pinned fixtures."""
+    editor = ("curriculum_editor",)
+    checkpoint = 1000
+
+    def rid():
+        return str(uuid.uuid4())
+
+    def call(action_name, *, roles=editor, now=None, **values):
+        return execute(connection, actions[action_name], "graph-editor", roles=roles,
+                       now=checkpoint + 1000 if now is None else now, **values)
+
+    def write(action_name, **values):
+        nonlocal checkpoint
+        request_id = rid()
+        result = call(action_name, request_id=request_id, version_id="graph-v1",
+                      expected_updated_at=checkpoint, **values)
+        assert result == [1, 1, 1], (action_name, result)
+        checkpoint += 1000
+        return request_id
+
+    def denied(action_name, values):
+        before = connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0]
+        for role in ((), ("support",), ("moderator",), ("content_reviewer",)):
+            try:
+                call(action_name, roles=role, **values)
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError(f"{action_name} allowed role {role}")
+        assert connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] == before
+
+    def no_write(action_name, values):
+        before = connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0]
+        assert call(action_name, **values) == [0, 0, 0], action_name
+        assert connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] == before
+
+    # Both locales are tied to the actual course pair, not merely valid tags.
+    for tag in ("en", "es", "fr"):
+        assert call("create_course_locale", request_id=rid(), language=tag,
+                    script="", region="") == [1, 1]
+    connection.execute("INSERT INTO courses VALUES ('graph-course','en','es','Synthetic graph',1000,1000)")
+    connection.execute("INSERT INTO course_versions VALUES ('graph-v1','graph-course',1,'graph-1','draft',1000,1000)")
+    connection.execute("INSERT INTO lessons VALUES ('graph-lesson','graph-v1','graph-lesson',1,0,'Synthetic lesson',1000)")
+    assert call("create_course_map", request_id=rid(), map_id=rid(),
+                course_id="graph-course", source_tag="en", target_tag="es") == [1, 1]
+
+    first = dict(objective_id=rid(), lesson_id="graph-lesson", label="Ask a question",
+                 description="Use a phrase in context", locale="es", sort_order=1)
+    second = dict(objective_id=rid(), lesson_id=None, label="Greet a person",
+                  description="Use a greeting in context", locale="es", sort_order=0)
+    denied("create_objective", {**first, "request_id":rid(), "version_id":"graph-v1",
+                                "expected_updated_at":checkpoint})
+    first_request = write("create_objective", **first)
+    no_write("create_objective", {**first, "request_id":first_request,
+                                  "version_id":"graph-v1", "expected_updated_at":1000})
+    write("create_objective", **second)
+    component_specs = [
+        ("lexeme", dict(form="hola", lemma="hola", part_of_speech="interjection")),
+        ("phrase", dict(text="Hola, Ana")),
+        ("grammar_point", dict(label="Vocative", description="Address a person")),
+        ("pronunciation_pattern", dict(pattern="/ola/", example="hola")),
+        ("register_tag", dict(name="informal", description="Familiar greeting")),
+        ("confusable_pair", dict(item_a="hola", item_b="ola", note="The initial letter differs")),
+    ]
+    component_ids = {}
+    for component, fields in component_specs:
+        entity_id = rid()
+        component_ids[component] = entity_id
+        values = {component + "_id": entity_id, "locale":"es", "sort_order":0, **fields}
+        denied("create_" + component, {**values, "request_id":rid(),
+                                       "version_id":"graph-v1", "expected_updated_at":checkpoint})
+        write("create_" + component, **values)
+
+    for index, (component, _) in enumerate(component_specs):
+        name = "link_objective_" + component
+        edge_table = {"grammar_point":"objective_grammar", "pronunciation_pattern":"objective_pronunciation",
+                      "register_tag":"objective_register", "confusable_pair":"objective_confusable"}.get(component, "objective_" + component)
+        values = {edge_table + "_id":rid(), "objective_id":first["objective_id"],
+                  component + "_id":component_ids[component], "rel_type":"teaches",
+                  "sort_order":index}
+        denied(name, {**values, "request_id":rid(), "version_id":"graph-v1",
+                      "expected_updated_at":checkpoint})
+        write(name, **values)
+        no_write(name, {**values, "request_id":rid(), "version_id":"graph-v1",
+                        "expected_updated_at":checkpoint})
+
+    extra_lexeme = rid()
+    write("create_lexeme", lexeme_id=extra_lexeme, form="buenos", lemma="bueno",
+          part_of_speech="adjective", locale="es", sort_order=1)
+    write("link_objective_lexeme", objective_lexeme_id=rid(), objective_id=first["objective_id"],
+          lexeme_id=extra_lexeme, rel_type="reinforces", sort_order=1)
+    source_lexeme = rid()
+    write("create_lexeme", lexeme_id=source_lexeme, form="hello", lemma="hello",
+          part_of_speech="interjection", locale="en", sort_order=2)
+    wrong_locale = dict(objective_lexeme_id=rid(), objective_id=first["objective_id"],
+                        lexeme_id=source_lexeme, rel_type="teaches", sort_order=2)
+    no_write("link_objective_lexeme", {**wrong_locale, "request_id":rid(),
+                                       "version_id":"graph-v1", "expected_updated_at":checkpoint})
+    no_write("link_objective_lexeme", {**wrong_locale, "request_id":rid(),
+                                       "version_id":"map-v2", "expected_updated_at":1000})
+
+    missing = dict(objective_lexeme_id=rid(), objective_id=first["objective_id"],
+                   lexeme_id="missing", rel_type="teaches", sort_order=10)
+    no_write("link_objective_lexeme", {**missing, "request_id":rid(),
+                                       "version_id":"graph-v1", "expected_updated_at":checkpoint})
+    edge = dict(prerequisite_id=rid(), objective_id=first["objective_id"],
+                prerequisite_objective_id=second["objective_id"], sort_order=0)
+    denied("add_objective_prerequisite", {**edge, "request_id":rid(),
+                                         "version_id":"graph-v1", "expected_updated_at":checkpoint})
+    write("add_objective_prerequisite", **edge)
+    no_write("add_objective_prerequisite", {**edge, "request_id":rid(),
+                                           "version_id":"graph-v1", "expected_updated_at":checkpoint})
+    before = connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0]
+    reverse = {**edge, "prerequisite_id":rid(), "objective_id":second["objective_id"],
+               "prerequisite_objective_id":first["objective_id"]}
+    try:
+        call("add_objective_prerequisite", request_id=rid(), version_id="graph-v1",
+             expected_updated_at=checkpoint, **reverse)
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError("objective prerequisite cycle was accepted")
+    assert connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] == before
+    assert connection.execute("SELECT COUNT(*) FROM objective_prerequisite").fetchone() == (1,)
+
+    update = {**first, "label":"Ask a clear question", "request_id":rid(),
+              "version_id":"graph-v1", "expected_updated_at":1000}
+    denied("update_objective", update)
+    no_write("update_objective", update)
+    update["expected_updated_at"] = checkpoint
+    before = connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0]
+    assert call("update_objective", now=checkpoint, **update) == [0, 0, 0]
+    assert connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] == before
+    assert call("update_objective", **update) == [1, 1, 1]
+    checkpoint += 1000
+    no_write("update_objective", update)
+    assert connection.execute("SELECT label,updated_by FROM objective WHERE id=?",
+                              (first["objective_id"],)).fetchone() == ("Ask a clear question", "graph-editor")
+
+    page = call("read_objective_graph", version_id="graph-v1", limit=1,
+                after_sort_order=None, after_id=None)
+    assert len(page) == 1 and page[0][0] == second["objective_id"]
+    rest = call("read_objective_graph", version_id="graph-v1", limit=1,
+                after_sort_order=page[0][6], after_id=page[0][0])
+    assert len(rest) == 1 and rest[0][0] == first["objective_id"]
+    for offset, (component, _) in enumerate(component_specs):
+        assert json.loads(rest[0][7 + offset])[0]["id"] == component_ids[component]
+    assert [x["id"] for x in json.loads(rest[0][7])] == [component_ids["lexeme"], extra_lexeme]
+    assert json.loads(rest[0][-1])[0]["id"] == second["objective_id"]
+    assert call("read_objective_graph", version_id="graph-v1", limit=1,
+                after_sort_order=rest[0][6], after_id=rest[0][0]) == []
+    assert call("read_objective_graph", version_id="map-v2", limit=10,
+                after_sort_order=None, after_id=None) == []
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
 
 if __name__ == "__main__":
     main()

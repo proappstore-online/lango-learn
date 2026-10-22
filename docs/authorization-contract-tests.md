@@ -1,6 +1,6 @@
 # Authorization and migration contract gate (LNG-025)
 
-`pnpm check:actions` runs all 29 registered action definitions as SQL against
+`pnpm check:actions` runs all 50 registered action definitions as SQL against
 temporary, file-backed SQLite databases with foreign keys enabled. One starts
 empty; the other starts with the legacy `0001_init` schema and an existing
 item before receiving the later migrations. The gate reapplies the migration

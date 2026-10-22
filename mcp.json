@@ -749,7 +749,7 @@
         },
         "completed_steps": {
           "type": "integer",
-          "description": "Local sample checkpoint (0\u20132)",
+          "description": "Local sample checkpoint (0–2)",
           "max": 2
         },
         "client_saved_at": {
@@ -761,7 +761,7 @@
     },
     {
       "name": "get_guest_import_receipt",
-      "description": "Read only the caller\u2019s immutable local sample import receipt",
+      "description": "Read only the caller’s immutable local sample import receipt",
       "operation": "query",
       "sql": "SELECT id,lesson_key,sample_version,completed_steps,outcome,client_saved_at,created_at FROM guest_lesson_imports WHERE id=:guest_session_id AND user_id=:__user_id LIMIT 1",
       "params": {
@@ -774,7 +774,7 @@
     },
     {
       "name": "get_guest_lesson_summary",
-      "description": "Read the caller\u2019s best unverified sample checkpoint",
+      "description": "Read the caller’s best unverified sample checkpoint",
       "operation": "query",
       "sql": "SELECT MAX(completed_steps) AS completed_steps,COUNT(*) AS imports FROM guest_lesson_imports WHERE user_id=:__user_id AND lesson_key='sample-greetings' LIMIT 1",
       "params": {},
@@ -1001,6 +1001,861 @@
         ],
         "caller_unscoped": {
           "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_objective",
+      "description": "Create a version-scoped objective in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective',:objective_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:label))>0 AND length(trim(:description))>0 AND (:lesson_id IS NULL OR EXISTS (SELECT 1 FROM lessons WHERE id=:lesson_id AND course_version_id=:version_id)) AND NOT EXISTS (SELECT 1 FROM objective WHERE id=:objective_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective (id,course_version_id,lesson_id,label,description,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_id,:version_id,:lesson_id,:label,:description,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective' AND resource_id=:objective_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective' AND resource_id=:objective_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective WHERE id=:objective_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "label": {
+          "type": "string",
+          "description": "label"
+        },
+        "description": {
+          "type": "string",
+          "description": "description"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_lexeme",
+      "description": "Create a version-scoped lexeme in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'lexeme',:lexeme_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:form))>0 AND length(trim(:lemma))>0 AND length(trim(:part_of_speech))>0 AND NOT EXISTS (SELECT 1 FROM lexeme WHERE id=:lexeme_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO lexeme (id,course_version_id,form,lemma,part_of_speech,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :lexeme_id,:version_id,:form,:lemma,:part_of_speech,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='lexeme' AND resource_id=:lexeme_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='lexeme' AND resource_id=:lexeme_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM lexeme WHERE id=:lexeme_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "lexeme_id": {
+          "type": "string",
+          "description": "lexeme id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "form": {
+          "type": "string",
+          "description": "form"
+        },
+        "lemma": {
+          "type": "string",
+          "description": "lemma"
+        },
+        "part_of_speech": {
+          "type": "string",
+          "description": "part of speech"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_phrase",
+      "description": "Create a version-scoped phrase in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'phrase',:phrase_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:text))>0 AND NOT EXISTS (SELECT 1 FROM phrase WHERE id=:phrase_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO phrase (id,course_version_id,text,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :phrase_id,:version_id,:text,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='phrase' AND resource_id=:phrase_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='phrase' AND resource_id=:phrase_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM phrase WHERE id=:phrase_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "phrase_id": {
+          "type": "string",
+          "description": "phrase id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "text": {
+          "type": "string",
+          "description": "text"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_grammar_point",
+      "description": "Create a version-scoped grammar point in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'grammar_point',:grammar_point_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:label))>0 AND length(trim(:description))>0 AND NOT EXISTS (SELECT 1 FROM grammar_point WHERE id=:grammar_point_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO grammar_point (id,course_version_id,label,description,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :grammar_point_id,:version_id,:label,:description,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='grammar_point' AND resource_id=:grammar_point_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='grammar_point' AND resource_id=:grammar_point_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM grammar_point WHERE id=:grammar_point_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "grammar_point_id": {
+          "type": "string",
+          "description": "grammar point id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "label": {
+          "type": "string",
+          "description": "label"
+        },
+        "description": {
+          "type": "string",
+          "description": "description"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_pronunciation_pattern",
+      "description": "Create a version-scoped pronunciation pattern in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'pronunciation_pattern',:pronunciation_pattern_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:pattern))>0 AND length(trim(:example))>0 AND NOT EXISTS (SELECT 1 FROM pronunciation_pattern WHERE id=:pronunciation_pattern_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO pronunciation_pattern (id,course_version_id,pattern,example,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :pronunciation_pattern_id,:version_id,:pattern,:example,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='pronunciation_pattern' AND resource_id=:pronunciation_pattern_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='pronunciation_pattern' AND resource_id=:pronunciation_pattern_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM pronunciation_pattern WHERE id=:pronunciation_pattern_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "pronunciation_pattern_id": {
+          "type": "string",
+          "description": "pronunciation pattern id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "pattern"
+        },
+        "example": {
+          "type": "string",
+          "description": "example"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_register_tag",
+      "description": "Create a version-scoped register tag in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'register_tag',:register_tag_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:name))>0 AND length(trim(:description))>0 AND NOT EXISTS (SELECT 1 FROM register_tag WHERE id=:register_tag_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO register_tag (id,course_version_id,name,description,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :register_tag_id,:version_id,:name,:description,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='register_tag' AND resource_id=:register_tag_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='register_tag' AND resource_id=:register_tag_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM register_tag WHERE id=:register_tag_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "register_tag_id": {
+          "type": "string",
+          "description": "register tag id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "name": {
+          "type": "string",
+          "description": "name"
+        },
+        "description": {
+          "type": "string",
+          "description": "description"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_confusable_pair",
+      "description": "Create a version-scoped confusable pair in a draft course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'confusable_pair',:confusable_pair_id,'create',json_object('version_id',:version_id,'locale',:locale),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN course_maps m ON m.course_id=v.course_id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:item_a))>0 AND length(trim(:item_b))>0 AND length(trim(:note))>0 AND NOT EXISTS (SELECT 1 FROM confusable_pair WHERE id=:confusable_pair_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO confusable_pair (id,course_version_id,item_a,item_b,note,locale,sort_order,created_at,updated_at,created_by,updated_by) SELECT :confusable_pair_id,:version_id,:item_a,:item_b,:note,:locale,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='confusable_pair' AND resource_id=:confusable_pair_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='confusable_pair' AND resource_id=:confusable_pair_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM confusable_pair WHERE id=:confusable_pair_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "confusable_pair_id": {
+          "type": "string",
+          "description": "confusable pair id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "item_a": {
+          "type": "string",
+          "description": "item a"
+        },
+        "item_b": {
+          "type": "string",
+          "description": "item b"
+        },
+        "note": {
+          "type": "string",
+          "description": "note"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_lexeme",
+      "description": "Link an objective to a same-version lexeme",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_lexeme',:objective_lexeme_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'lexeme_id',:lexeme_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN lexeme c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:lexeme_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_lexeme WHERE id=:objective_lexeme_id OR (objective_id=:objective_id AND lexeme_id=:lexeme_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_lexeme (id,course_version_id,objective_id,lexeme_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_lexeme_id,:version_id,:objective_id,:lexeme_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_lexeme' AND resource_id=:objective_lexeme_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_lexeme' AND resource_id=:objective_lexeme_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_lexeme WHERE id=:objective_lexeme_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_lexeme_id": {
+          "type": "string",
+          "description": "objective lexeme id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "lexeme_id": {
+          "type": "string",
+          "description": "lexeme id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_phrase",
+      "description": "Link an objective to a same-version phrase",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_phrase',:objective_phrase_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'phrase_id',:phrase_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN phrase c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:phrase_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_phrase WHERE id=:objective_phrase_id OR (objective_id=:objective_id AND phrase_id=:phrase_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_phrase (id,course_version_id,objective_id,phrase_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_phrase_id,:version_id,:objective_id,:phrase_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_phrase' AND resource_id=:objective_phrase_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_phrase' AND resource_id=:objective_phrase_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_phrase WHERE id=:objective_phrase_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_phrase_id": {
+          "type": "string",
+          "description": "objective phrase id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "phrase_id": {
+          "type": "string",
+          "description": "phrase id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_grammar_point",
+      "description": "Link an objective to a same-version grammar point",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_grammar',:objective_grammar_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'grammar_point_id',:grammar_point_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN grammar_point c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:grammar_point_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_grammar WHERE id=:objective_grammar_id OR (objective_id=:objective_id AND grammar_point_id=:grammar_point_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_grammar (id,course_version_id,objective_id,grammar_point_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_grammar_id,:version_id,:objective_id,:grammar_point_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_grammar' AND resource_id=:objective_grammar_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_grammar' AND resource_id=:objective_grammar_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_grammar WHERE id=:objective_grammar_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_grammar_id": {
+          "type": "string",
+          "description": "objective grammar id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "grammar_point_id": {
+          "type": "string",
+          "description": "grammar point id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_pronunciation_pattern",
+      "description": "Link an objective to a same-version pronunciation pattern",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_pronunciation',:objective_pronunciation_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'pronunciation_pattern_id',:pronunciation_pattern_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN pronunciation_pattern c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:pronunciation_pattern_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_pronunciation WHERE id=:objective_pronunciation_id OR (objective_id=:objective_id AND pronunciation_pattern_id=:pronunciation_pattern_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_pronunciation (id,course_version_id,objective_id,pronunciation_pattern_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_pronunciation_id,:version_id,:objective_id,:pronunciation_pattern_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_pronunciation' AND resource_id=:objective_pronunciation_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_pronunciation' AND resource_id=:objective_pronunciation_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_pronunciation WHERE id=:objective_pronunciation_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_pronunciation_id": {
+          "type": "string",
+          "description": "objective pronunciation id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "pronunciation_pattern_id": {
+          "type": "string",
+          "description": "pronunciation pattern id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_register_tag",
+      "description": "Link an objective to a same-version register tag",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_register',:objective_register_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'register_tag_id',:register_tag_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN register_tag c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:register_tag_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_register WHERE id=:objective_register_id OR (objective_id=:objective_id AND register_tag_id=:register_tag_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_register (id,course_version_id,objective_id,register_tag_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_register_id,:version_id,:objective_id,:register_tag_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_register' AND resource_id=:objective_register_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_register' AND resource_id=:objective_register_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_register WHERE id=:objective_register_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_register_id": {
+          "type": "string",
+          "description": "objective register id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "register_tag_id": {
+          "type": "string",
+          "description": "register tag id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "link_objective_confusable_pair",
+      "description": "Link an objective to a same-version confusable pair",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_confusable',:objective_confusable_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'confusable_pair_id',:confusable_pair_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN confusable_pair c ON c.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND c.id=:confusable_pair_id AND o.locale=c.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :rel_type IN ('teaches','reinforces','assesses') AND NOT EXISTS (SELECT 1 FROM objective_confusable WHERE id=:objective_confusable_id OR (objective_id=:objective_id AND confusable_pair_id=:confusable_pair_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_confusable (id,course_version_id,objective_id,confusable_pair_id,rel_type,sort_order,created_at,updated_at,created_by,updated_by) SELECT :objective_confusable_id,:version_id,:objective_id,:confusable_pair_id,:rel_type,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_confusable' AND resource_id=:objective_confusable_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_confusable' AND resource_id=:objective_confusable_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_confusable WHERE id=:objective_confusable_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_confusable_id": {
+          "type": "string",
+          "description": "objective confusable id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "confusable_pair_id": {
+          "type": "string",
+          "description": "confusable pair id"
+        },
+        "rel_type": {
+          "type": "string",
+          "description": "rel type"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "add_objective_prerequisite",
+      "description": "Add an acyclic same-version objective prerequisite",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective_prerequisite',:prerequisite_id,'create',json_object('version_id',:version_id,'objective_id',:objective_id,'prerequisite_objective_id',:prerequisite_objective_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions v JOIN objective o ON o.course_version_id=v.id JOIN objective p ON p.course_version_id=v.id WHERE v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND o.id=:objective_id AND p.id=:prerequisite_objective_id AND o.locale=p.locale) AND :__now>:expected_updated_at AND :sort_order>=0 AND :objective_id<>:prerequisite_objective_id AND NOT EXISTS (SELECT 1 FROM objective_prerequisite WHERE id=:prerequisite_id OR (objective_id=:objective_id AND prerequisite_objective_id=:prerequisite_objective_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO objective_prerequisite (id,course_version_id,objective_id,prerequisite_objective_id,sort_order,created_at,updated_at,created_by,updated_by) SELECT :prerequisite_id,:version_id,:objective_id,:prerequisite_objective_id,:sort_order,:__now,:__now,:__user_id,:__user_id WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_prerequisite' AND resource_id=:prerequisite_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective_prerequisite' AND resource_id=:prerequisite_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective_prerequisite WHERE id=:prerequisite_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "prerequisite_id": {
+          "type": "string",
+          "description": "prerequisite id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "prerequisite_objective_id": {
+          "type": "string",
+          "description": "prerequisite objective id"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "update_objective",
+      "description": "Update an objective in a draft course version",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'objective',:objective_id,'update',json_object('version_id',:version_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM objective o JOIN course_versions v ON v.id=o.course_version_id JOIN course_maps m ON m.course_id=v.course_id WHERE o.id=:objective_id AND v.id=:version_id AND v.status='draft' AND v.updated_at=:expected_updated_at AND :locale IN (m.source_tag,m.target_tag)) AND :__now>:expected_updated_at AND :sort_order>=0 AND length(trim(:label))>0 AND length(trim(:description))>0 AND (:lesson_id IS NULL OR EXISTS (SELECT 1 FROM lessons WHERE id=:lesson_id AND course_version_id=:version_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "UPDATE objective SET label=:label,description=:description,locale=:locale,sort_order=:sort_order,lesson_id=:lesson_id,updated_at=:__now,updated_by=:__user_id WHERE id=:objective_id AND course_version_id=:version_id AND updated_at<=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective' AND resource_id=:objective_id AND action='update' AND created_at=:__now)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='objective' AND resource_id=:objective_id AND action='update' AND created_at=:__now) AND EXISTS (SELECT 1 FROM objective WHERE id=:objective_id AND updated_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "objective_id": {
+          "type": "string",
+          "description": "objective id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "label": {
+          "type": "string",
+          "description": "label"
+        },
+        "description": {
+          "type": "string",
+          "description": "description"
+        },
+        "locale": {
+          "type": "string",
+          "description": "locale"
+        },
+        "sort_order": {
+          "type": "integer",
+          "description": "sort order"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "read_objective_graph",
+      "description": "Read a version-pinned objective graph in deterministic keyset order",
+      "operation": "query",
+      "sql": "SELECT o.id,o.course_version_id,o.lesson_id,o.label,o.description,o.locale,o.sort_order,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'form',x.form,'lemma',x.lemma,'part_of_speech',x.part_of_speech)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_lexeme e JOIN lexeme c ON c.id=e.lexeme_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS lexemes_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'text',x.text)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_phrase e JOIN phrase c ON c.id=e.phrase_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS phrases_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'label',x.label,'description',x.description)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_grammar e JOIN grammar_point c ON c.id=e.grammar_point_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS grammar_points_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'pattern',x.pattern,'example',x.example)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_pronunciation e JOIN pronunciation_pattern c ON c.id=e.pronunciation_pattern_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS pronunciation_patterns_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'name',x.name,'description',x.description)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_register e JOIN register_tag c ON c.id=e.register_tag_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS register_tags_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'rel_type',x.rel_type,'sort_order',x.sort_order,'locale',x.locale,'item_a',x.item_a,'item_b',x.item_b,'note',x.note)),'[]') FROM (SELECT c.*, e.rel_type, e.sort_order FROM objective_confusable e JOIN confusable_pair c ON c.id=e.confusable_pair_id AND c.course_version_id=e.course_version_id WHERE e.objective_id=o.id AND e.course_version_id=o.course_version_id ORDER BY e.sort_order,e.id) x) AS confusable_pairs_json,(SELECT COALESCE(json_group_array(json_object('id',x.id,'sort_order',x.sort_order)),'[]') FROM (SELECT p.prerequisite_objective_id AS id,p.sort_order FROM objective_prerequisite p WHERE p.objective_id=o.id AND p.course_version_id=o.course_version_id ORDER BY p.sort_order,p.id) x) AS prerequisites_json FROM objective o WHERE o.course_version_id=:version_id AND (:after_sort_order IS NULL OR (o.sort_order,o.id)>(:after_sort_order,:after_id)) ORDER BY o.sort_order,o.id LIMIT MIN(MAX(:limit,1),100)",
+      "params": {
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "after_sort_order": {
+          "type": "integer",
+          "description": "cursor sort order",
+          "default": null
+        },
+        "after_id": {
+          "type": "string",
+          "description": "cursor id",
+          "default": null
+        },
+        "limit": {
+          "type": "integer",
+          "description": "bounded page size",
+          "default": 20
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared draft curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
         }
       }
     }

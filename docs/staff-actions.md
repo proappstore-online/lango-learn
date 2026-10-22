@@ -10,7 +10,7 @@ audit actor. They never return answer text, audio, or private learner progress.
 
 | PAS app role | Actions | Boundary |
 | --- | --- | --- |
-| `curriculum_editor` | `create_course`, `create_course_version`, `create_lesson`, `create_exercise`, `submit_version_for_review`, `create_course_locale`, `create_course_map`, `create_course_unit`, `place_lesson_in_unit`, `add_lesson_prerequisite` | Author a draft snapshot. |
+| `curriculum_editor` | Course and lesson creation, course-map authoring, objective and knowledge-component creation, objective links and prerequisites, objective updates, and draft graph reads | Author a draft snapshot. See the exact action allowlist in `contracts/staff-roles.json`. |
 | `content_reviewer` | `return_version_to_draft`, `approve_course_version` | Review a submitted snapshot. |
 | `moderator` | `publish_course_version`, `retire_course_release` | Control the active release. |
 | `support` | `list_staff_reports`, `update_report_status` | Read and triage reports across learners. |
@@ -81,3 +81,4 @@ immutability, report ownership, audit rows, failed-batch rollback, and
 retirement. There is no original course content or media in this change.
 
 The course-map authoring contract and locale normalization rules are in [course-map.md](course-map.md).
+The objective graph contract is in [objective-graph.md](objective-graph.md).

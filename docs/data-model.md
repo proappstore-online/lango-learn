@@ -41,3 +41,4 @@ actions; LNG-021/022 will add fixtures for new action SQL.
 
 
 The additive course-map extension is documented in [course-map.md](course-map.md).
+The version-scoped objective graph extension is documented in [objective-graph.md](objective-graph.md).
