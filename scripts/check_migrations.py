@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ALLOWED = re.compile(r"^CREATE\s+(?:TABLE|INDEX|UNIQUE\s+INDEX)\s+IF\s+NOT\s+EXISTS\b", re.I)
+ALLOWED = re.compile(r"^CREATE\s+(?:(?:TABLE|INDEX|UNIQUE\s+INDEX|TRIGGER|VIEW)\s+IF\s+NOT\s+EXISTS)\b", re.I)
 
 
 def load_migrations():
@@ -16,7 +16,16 @@ def load_migrations():
     assert len(names) == len(set(names)), "migration names must be unique"
     assert names == sorted(names), "migration names must be ordered"
     for item in migrations:
-        statements = [part.strip() for part in item["sql"].split(";") if part.strip()]
+        statements = []
+        pending = ""
+        for line in item["sql"].splitlines(keepends=True):
+            pending += line
+            if sqlite3.complete_statement(pending):
+                statements.append(pending.strip().rstrip(";"))
+                pending = ""
+        if pending.strip():
+            assert sqlite3.complete_statement(pending + ";"), f"{item['name']} has incomplete SQL"
+            statements.append(pending.strip())
         assert statements, f"{item['name']} has no SQL"
         for statement in statements:
             assert ALLOWED.match(statement), f"{item['name']} has a non-additive statement: {statement}"
@@ -33,7 +42,8 @@ def check_learning_model(connection):
         "learner_profiles", "learner_preferences", "courses", "course_versions",
         "lessons", "exercises", "learning_sessions", "exercise_attempts",
         "learning_exposures", "review_states", "content_reports", "course_releases",
-        "audit_rows", "guest_lesson_imports",
+        "audit_rows", "guest_lesson_imports", "course_locales", "course_maps",
+        "course_units", "course_unit_lessons", "lesson_prerequisites",
     }
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert required <= tables, f"missing learning tables: {required - tables}"
@@ -43,7 +53,8 @@ def check_learning_model(connection):
         "idx_review_due", "idx_reports_queue", "idx_reports_user",
         "idx_active_release", "idx_releases_history", "idx_audit_resource",
         "idx_audit_actor", "idx_one_active_lesson_session", "idx_one_review_exposure",
-        "idx_guest_imports_user",
+        "idx_guest_imports_user", "idx_course_maps_pair", "idx_course_units_order",
+        "idx_unit_lessons_order", "idx_lesson_prerequisites",
     }
     indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert required_indexes <= indexes, f"missing learning indexes: {required_indexes - indexes}"
@@ -54,7 +65,8 @@ def check_learning_model(connection):
         assert columns["user_id"][3] == 1, f"{table}.user_id must be required"
     for table in required:
         columns = {row[1]: row for row in connection.execute(f"PRAGMA table_info({table})")}
-        assert columns["id"][2].upper() == "TEXT" and columns["id"][5] == 1
+        key = "tag" if table == "course_locales" else "id"
+        assert columns[key][2].upper() == "TEXT" and columns[key][5] == 1
         assert columns["created_at"][2].upper() == "INTEGER" and columns["created_at"][3] == 1
 
     # Exercise the relationships used by later scoped actions with two users and

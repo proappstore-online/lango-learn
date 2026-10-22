@@ -38,3 +38,6 @@ foreign keys enabled, checks their additive shape, inserts representative
 data, rejects owner and snapshot mismatches, and confirms legacy rows survive
 a rerun. `pnpm check:actions` continues to exercise the existing scaffold
 actions; LNG-021/022 will add fixtures for new action SQL.
+
+
+The additive course-map extension is documented in [course-map.md](course-map.md).

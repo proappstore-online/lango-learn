@@ -749,7 +749,7 @@
         },
         "completed_steps": {
           "type": "integer",
-          "description": "Local sample checkpoint (0–2)",
+          "description": "Local sample checkpoint (0\u20132)",
           "max": 2
         },
         "client_saved_at": {
@@ -761,7 +761,7 @@
     },
     {
       "name": "get_guest_import_receipt",
-      "description": "Read only the caller’s immutable local sample import receipt",
+      "description": "Read only the caller\u2019s immutable local sample import receipt",
       "operation": "query",
       "sql": "SELECT id,lesson_key,sample_version,completed_steps,outcome,client_saved_at,created_at FROM guest_lesson_imports WHERE id=:guest_session_id AND user_id=:__user_id LIMIT 1",
       "params": {
@@ -774,11 +774,235 @@
     },
     {
       "name": "get_guest_lesson_summary",
-      "description": "Read the caller’s best unverified sample checkpoint",
+      "description": "Read the caller\u2019s best unverified sample checkpoint",
       "operation": "query",
       "sql": "SELECT MAX(completed_steps) AS completed_steps,COUNT(*) AS imports FROM guest_lesson_imports WHERE user_id=:__user_id AND lesson_key='sample-greetings' LIMIT 1",
       "params": {},
       "requires_auth": true
+    },
+    {
+      "name": "create_course_locale",
+      "description": "Register a canonical BCP-47 language/script/region tag",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_locale',lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END,'create',json_object('tag',lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND length(:language) BETWEEN 2 AND 8 AND NOT EXISTS (SELECT 1 FROM course_locales WHERE tag=lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO course_locales (tag,language,script,region,created_at) SELECT lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END,lower(:language),NULLIF(upper(substr(:script,1,1))||lower(substr(:script,2)),''),NULLIF(upper(:region),''),:__now WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_locale' AND resource_id=lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END AND action='create' AND created_at=:__now) AND NOT EXISTS (SELECT 1 FROM course_locales WHERE tag=lower(:language) || CASE WHEN trim(:script)='' THEN '' ELSE '-'||upper(substr(:script,1,1))||lower(substr(:script,2)) END || CASE WHEN trim(:region)='' THEN '' ELSE '-'||upper(:region) END)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "language": {
+          "type": "string",
+          "description": "language"
+        },
+        "script": {
+          "type": "string",
+          "description": "script"
+        },
+        "region": {
+          "type": "string",
+          "description": "region"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_course_map",
+      "description": "Bind canonical source and target locales to a course",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_map',:map_id,'create',json_object('course_id',:course_id,'source',:source_tag,'target',:target_tag),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM courses WHERE id=:course_id) AND :source_tag<>:target_tag AND EXISTS (SELECT 1 FROM course_locales WHERE tag=:source_tag) AND EXISTS (SELECT 1 FROM course_locales WHERE tag=:target_tag) AND NOT EXISTS (SELECT 1 FROM course_maps WHERE course_id=:course_id OR id=:map_id) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO course_maps (id,course_id,source_tag,target_tag,created_at) SELECT :map_id,:course_id,:source_tag,:target_tag,:__now WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_map' AND resource_id=:map_id AND action='create' AND created_at=:__now) AND NOT EXISTS (SELECT 1 FROM course_maps WHERE course_id=:course_id OR id=:map_id)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "map_id": {
+          "type": "string",
+          "description": "map id"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "course id"
+        },
+        "source_tag": {
+          "type": "string",
+          "description": "source tag"
+        },
+        "target_tag": {
+          "type": "string",
+          "description": "target tag"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "create_course_unit",
+      "description": "Add an ordered unit to a draft course version",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_unit',:unit_id,'create',json_object('version_id',:version_id,'position',:position),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at) AND :__now>:expected_updated_at AND :position>=0 AND length(trim(:title))>0 AND NOT EXISTS (SELECT 1 FROM course_units WHERE id=:unit_id OR (course_version_id=:version_id AND (position=:position OR stable_content_id=:stable_content_id))) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO course_units (id,course_version_id,stable_content_id,position,title,created_at) SELECT :unit_id,:version_id,:stable_content_id,:position,:title,:__now WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_unit' AND resource_id=:unit_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_unit' AND resource_id=:unit_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_units WHERE id=:unit_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "unit_id": {
+          "type": "string",
+          "description": "unit id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "stable_content_id": {
+          "type": "string",
+          "description": "stable content id"
+        },
+        "position": {
+          "type": "integer",
+          "description": "position"
+        },
+        "title": {
+          "type": "string",
+          "description": "title"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "place_lesson_in_unit",
+      "description": "Place a same-version lesson in an ordered unit",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'course_unit_lesson',:placement_id,'create',json_object('version_id',:version_id,'unit_id',:unit_id,'lesson_id',:lesson_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at) AND :__now>:expected_updated_at AND :position>=0 AND EXISTS (SELECT 1 FROM course_units WHERE course_version_id=:version_id AND id=:unit_id) AND EXISTS (SELECT 1 FROM lessons WHERE course_version_id=:version_id AND id=:lesson_id) AND NOT EXISTS (SELECT 1 FROM course_unit_lessons WHERE id=:placement_id OR (course_version_id=:version_id AND lesson_id=:lesson_id) OR (unit_id=:unit_id AND position=:position)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO course_unit_lessons (id,course_version_id,unit_id,lesson_id,position,created_at) SELECT :placement_id,:version_id,:unit_id,:lesson_id,:position,:__now WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_unit_lesson' AND resource_id=:placement_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='course_unit_lesson' AND resource_id=:placement_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_unit_lessons WHERE id=:placement_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "placement_id": {
+          "type": "string",
+          "description": "placement id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "unit_id": {
+          "type": "string",
+          "description": "unit id"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "position": {
+          "type": "integer",
+          "description": "position"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
+    },
+    {
+      "name": "add_lesson_prerequisite",
+      "description": "Add an acyclic same-version lesson prerequisite",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO audit_rows (id,actor_user_id,subject_user_id,resource_type,resource_id,action,detail_json,created_at) SELECT :request_id,:__user_id,NULL,'lesson_prerequisite',:prerequisite_id,'create',json_object('version_id',:version_id,'lesson_id',:lesson_id,'prerequisite_lesson_id',:prerequisite_lesson_id),:__now WHERE length(:request_id)=36 AND lower(:request_id) GLOB '[0-9a-f]*' AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at) AND :__now>:expected_updated_at AND :lesson_id<>:prerequisite_lesson_id AND EXISTS (SELECT 1 FROM lessons WHERE course_version_id=:version_id AND id=:lesson_id) AND EXISTS (SELECT 1 FROM lessons WHERE course_version_id=:version_id AND id=:prerequisite_lesson_id) AND NOT EXISTS (SELECT 1 FROM lesson_prerequisites WHERE id=:prerequisite_id OR (course_version_id=:version_id AND lesson_id=:lesson_id AND prerequisite_lesson_id=:prerequisite_lesson_id)) AND NOT EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id)",
+        "INSERT INTO lesson_prerequisites (id,course_version_id,lesson_id,prerequisite_lesson_id,created_at) SELECT :prerequisite_id,:version_id,:lesson_id,:prerequisite_lesson_id,:__now WHERE EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='lesson_prerequisite' AND resource_id=:prerequisite_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM course_versions WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at)",
+        "UPDATE course_versions SET updated_at=:__now WHERE id=:version_id AND status='draft' AND updated_at=:expected_updated_at AND EXISTS (SELECT 1 FROM audit_rows WHERE id=:request_id AND actor_user_id=:__user_id AND resource_type='lesson_prerequisite' AND resource_id=:prerequisite_id AND action='create' AND created_at=:__now) AND EXISTS (SELECT 1 FROM lesson_prerequisites WHERE id=:prerequisite_id AND created_at=:__now)"
+      ],
+      "params": {
+        "request_id": {
+          "type": "string",
+          "description": "request id"
+        },
+        "prerequisite_id": {
+          "type": "string",
+          "description": "prerequisite id"
+        },
+        "version_id": {
+          "type": "string",
+          "description": "version id"
+        },
+        "lesson_id": {
+          "type": "string",
+          "description": "lesson id"
+        },
+        "prerequisite_lesson_id": {
+          "type": "string",
+          "description": "prerequisite lesson id"
+        },
+        "expected_updated_at": {
+          "type": "integer",
+          "description": "expected updated at"
+        }
+      },
+      "requires_auth": true,
+      "auth": {
+        "required": true,
+        "app_roles": [
+          "curriculum_editor"
+        ],
+        "caller_unscoped": {
+          "reason": "PAS app role grants shared curriculum authoring in this app-isolated D1 database; actor identity comes from the session."
+        }
+      }
     }
   ]
 }

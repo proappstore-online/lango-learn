@@ -20,6 +20,8 @@ EXPECTED = {
     "submit_version_for_review", "approve_course_version", "return_version_to_draft",
     "publish_course_version", "retire_course_release", "list_staff_reports", "update_report_status",
     "import_guest_lesson", "get_guest_import_receipt", "get_guest_lesson_summary",
+    "create_course_locale", "create_course_map", "create_course_unit",
+    "place_lesson_in_unit", "add_lesson_prerequisite",
 }
 
 ROLE_ACTIONS = json.loads((ROOT / "contracts/staff-roles.json").read_text())
@@ -104,7 +106,7 @@ def main():
             if mode == "upgraded":
                 with sqlite3.connect(path) as legacy:
                     legacy.execute("PRAGMA foreign_keys = ON")
-                    apply_migrations(legacy, migrations[:1])
+                    apply_migrations(legacy, migrations[:-1])
                     legacy.execute("INSERT INTO items VALUES ('legacy','alice','Before upgrade',NULL,500)")
             with sqlite3.connect(path) as connection:
                 connection.execute("PRAGMA foreign_keys = ON")
@@ -114,6 +116,7 @@ def main():
                 if mode == "upgraded":
                     assert connection.execute("SELECT title FROM items WHERE id='legacy'").fetchone() == ("Before upgrade",)
                 run_contracts(connection, actions)
+                check_course_map(connection, actions)
             # Reopen the file so the result is checked as durable data.
             with sqlite3.connect(path) as persisted:
                 persisted.execute("PRAGMA foreign_keys = ON")
@@ -121,7 +124,7 @@ def main():
                 assert persisted.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] >= 18
                 assert persisted.execute("SELECT COUNT(*) FROM guest_lesson_imports").fetchone()[0] >= 4
                 assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='superseded'").fetchone() == (1,)
-                assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='retired'").fetchone() == (1,)
+                assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='retired'").fetchone() == (2,)
                 assert persisted.execute("SELECT COUNT(*) FROM course_releases WHERE status='active'").fetchone() == (1,)
                 assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='alice'").fetchone() == (2,)
                 assert persisted.execute("SELECT COUNT(*) FROM exercise_attempts WHERE user_id='bob'").fetchone() == (0,)
@@ -527,6 +530,119 @@ def check_staff_role_matrix(connection, actions):
                            expected_updated_at=1000) == [0, 0, 0]
             assert other_app.execute("SELECT COUNT(*) FROM audit_rows").fetchone() == (0,)
 
+
+
+
+def check_course_map(connection, actions):
+    """Persisted synthetic curriculum contract, including rejected transactions."""
+    editor = ("curriculum_editor",)
+    def call(name, *, actor="editor", roles=editor, now=2000, **values):
+        return execute(connection, actions[name], actor, roles=roles, now=now, **values)
+    def rid():
+        return str(uuid.uuid4())
+    def rejects(action, **values):
+        before = connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0]
+        try:
+            call(action, **values)
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError(f"expected atomic rejection: {action}")
+        assert connection.execute("SELECT COUNT(*) FROM audit_rows").fetchone()[0] == before
+
+    # Canonicalize case without dropping script or region. The two variants
+    # remain separate keys; malformed components roll the audit back too.
+    en = dict(request_id=rid(), language="EN", script="latn", region="us")
+    ar = dict(request_id=rid(), language="AR", script="arab", region="eg")
+    assert call("create_course_locale", **en) == [1, 1]
+    assert call("create_course_locale", **en) == [0, 0]
+    assert call("create_course_locale", **ar) == [1, 1]
+    assert connection.execute("SELECT tag FROM course_locales ORDER BY tag").fetchall() == [("ar-Arab-EG",), ("en-Latn-US",)]
+    rejects("create_course_locale", request_id=rid(), language="e1", script="Latn", region="US")
+    rejects("create_course_locale", request_id=rid(), language="en", script="Latin", region="US")
+    rejects("create_course_locale", request_id=rid(), language="en", script="Latn", region="USA1")
+    assert call("create_course_locale", request_id=rid(), language="en", script="Latn", region="GB") == [1, 1]
+    assert connection.execute("SELECT COUNT(*) FROM course_locales").fetchone() == (3,)
+
+    connection.execute("INSERT INTO courses VALUES ('map-course','en','ar','Synthetic course',1000,1000)")
+    connection.execute("INSERT INTO course_versions VALUES ('map-v1','map-course',1,'synthetic-1','draft',1000,1000)")
+    for position in range(3):
+        connection.execute("INSERT INTO lessons VALUES (?, 'map-v1', ?, 1, ?, ?, 1000)",
+                           (f"map-l{position}", f"stable-{position}", position, f"Synthetic {position}"))
+    mapping = dict(request_id=rid(), map_id=rid(), course_id="map-course",
+                   source_tag="en-Latn-US", target_tag="ar-Arab-EG")
+    try:
+        call("create_course_map", roles=(), **mapping)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("missing editor role was allowed")
+    assert call("create_course_map", **mapping) == [1, 1]
+    assert call("create_course_map", **mapping) == [0, 0]
+    assert connection.execute("SELECT release_state FROM course_map_release_state WHERE course_id='map-course'").fetchone() == ("draft",)
+    assert call("create_course_map", request_id=rid(), map_id=rid(), course_id="map-course",
+                source_tag="en-Latn-GB", target_tag="ar-Arab-EG") == [0, 0]
+    try:
+        connection.execute("UPDATE course_maps SET target_tag='en-Latn-GB' WHERE course_id='map-course'")
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError("course map changed")
+
+    unit = dict(request_id=rid(), unit_id=rid(), version_id="map-v1", stable_content_id="unit-1",
+                position=0, title="Synthetic unit", expected_updated_at=1000)
+    assert call("create_course_unit", now=2000, **unit) == [1, 1, 1]
+    assert call("create_course_unit", now=3000, **unit) == [0, 0, 0]
+    assert call("create_course_unit", now=3000, **{**unit, "request_id":rid(), "unit_id":rid()}) == [0, 0, 0]
+    placement = dict(request_id=rid(), placement_id=rid(), version_id="map-v1", unit_id=unit["unit_id"],
+                     lesson_id="map-l0", position=0, expected_updated_at=2000)
+    assert call("place_lesson_in_unit", now=3000, **placement) == [1, 1, 1]
+    assert call("place_lesson_in_unit", now=4000, **placement) == [0, 0, 0]
+    missing = dict(request_id=rid(), prerequisite_id=rid(), version_id="map-v1",
+                   lesson_id="map-l1", prerequisite_lesson_id="missing", expected_updated_at=3000)
+    assert call("add_lesson_prerequisite", now=4000, **missing) == [0, 0, 0]
+    first = {**missing, "request_id":rid(), "prerequisite_lesson_id":"map-l0"}
+    assert call("add_lesson_prerequisite", now=4000, **first) == [1, 1, 1]
+    second = {**first, "request_id":rid(), "prerequisite_id":rid(), "lesson_id":"map-l2",
+              "prerequisite_lesson_id":"map-l1", "expected_updated_at":4000}
+    assert call("add_lesson_prerequisite", now=5000, **second) == [1, 1, 1]
+    cycle = {**second, "request_id":rid(), "prerequisite_id":rid(), "lesson_id":"map-l0",
+             "prerequisite_lesson_id":"map-l2", "expected_updated_at":5000}
+    rejects("add_lesson_prerequisite", now=6000, **cycle)
+    # Composite foreign keys reject a lesson from another version even when both
+    # IDs exist; the existing course shell has a distinct published snapshot.
+    connection.execute("INSERT INTO course_versions VALUES ('map-v2','map-course',2,'synthetic-2','draft',1000,1000)")
+    connection.execute("INSERT INTO lessons VALUES ('map-foreign','map-v2','foreign',2,0,'Foreign',1000)")
+    assert call("place_lesson_in_unit", now=6000, request_id=rid(), placement_id=rid(),
+                version_id="map-v1", unit_id=unit["unit_id"], lesson_id="map-foreign",
+                position=1, expected_updated_at=5000) == [0, 0, 0]
+    assert call("add_lesson_prerequisite", now=6000, request_id=rid(), prerequisite_id=rid(),
+                version_id="map-v1", lesson_id="map-l0", prerequisite_lesson_id="map-foreign",
+                expected_updated_at=5000) == [0, 0, 0]
+    assert call("add_lesson_prerequisite", now=6000, request_id=rid(), prerequisite_id=rid(),
+                version_id="map-v1", lesson_id="map-l0", prerequisite_lesson_id="map-l0",
+                expected_updated_at=5000) == [0, 0, 0]
+    assert connection.execute("SELECT COUNT(*) FROM lesson_prerequisites").fetchone() == (2,)
+    assert connection.execute("SELECT updated_at FROM course_versions WHERE id='map-v1'").fetchone() == (5000,)
+    connection.execute("UPDATE course_versions SET status='review',updated_at=6000 WHERE id='map-v1'")
+    assert call("create_course_unit", now=7000, **{**unit, "request_id":rid(), "unit_id":rid(),
+                                                    "position":1, "expected_updated_at":6000}) == [0, 0, 0]
+    for sql in ("UPDATE course_versions SET package_version='changed' WHERE id='map-v1'",
+                "UPDATE course_versions SET status='published' WHERE id='map-v1'",
+                "DELETE FROM course_units WHERE id='" + unit["unit_id"] + "'"):
+        try:
+            connection.execute(sql)
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError(f"immutable or transition contract failed: {sql}")
+    connection.execute("UPDATE course_versions SET status='approved',updated_at=7000 WHERE id='map-v1'")
+    connection.execute("UPDATE course_versions SET status='published',updated_at=8000 WHERE id='map-v1'")
+    connection.execute("INSERT INTO course_releases VALUES ('map-release','map-course','map-v1',1,'active','moderator',8000,8000)")
+    assert connection.execute("SELECT release_state FROM course_map_release_state WHERE course_id='map-course'").fetchone() == ("published",)
+    connection.execute("UPDATE course_releases SET status='retired',updated_at=9000 WHERE id='map-release'")
+    assert connection.execute("SELECT release_state FROM course_map_release_state WHERE course_id='map-course'").fetchone() == ("deprecated",)
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 if __name__ == "__main__":
     main()

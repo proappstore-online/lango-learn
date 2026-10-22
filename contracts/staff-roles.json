@@ -4,7 +4,12 @@
     "create_course_version",
     "create_lesson",
     "create_exercise",
-    "submit_version_for_review"
+    "submit_version_for_review",
+    "create_course_locale",
+    "create_course_map",
+    "create_course_unit",
+    "place_lesson_in_unit",
+    "add_lesson_prerequisite"
   ],
   "content_reviewer": [
     "return_version_to_draft",
