@@ -1,28 +1,22 @@
-# template-app
+# Lango Learn
 
-The app template used by [`pas create`](https://docs.proappstore.online/) to scaffold new Pro apps for [ProAppStore](https://proappstore.online).
+Lango Learn is a PAS-hosted language-learning app preparing an original first
+course. The current web app is a branded shell; lessons and learner progress
+are planned in the [backlog](docs/comprehensive-epics-and-issues.md). The
+[architecture decisions](docs/architecture.md) record the client/server
+boundary and conventions for the upcoming course and data work.
 
-You almost certainly want to use the CLI, not clone this directly:
+Run it locally with `pnpm install && pnpm dev`. Use `pnpm typecheck`,
+`pnpm test`, and `pnpm build` to check it; the build runs the PAS compliance
+check before compiling the web app.
 
-```bash
-npm i -g @proappstore/cli
-pas create my-app
-```
-
-The CLI clones this template, replaces every `lango-learn` placeholder with your app id, runs `pnpm install`, initializes git, and makes the first commit — the result is a runnable app you can `pnpm dev` immediately. The starter is independently branded: its shell, public metadata, PWA manifest, and link preview contain no required platform attribution.
-
-Need schedules, webhooks, or server routes? Scaffold the optional app worker:
-
-```bash
-pas create my-app --with-worker
-```
-
-This adds a `worker/` directory for those workloads. `worker/` is absent by default — the deploy workflow builds and uploads it only when `worker/package.json` exists, so apps without one deploy unchanged. The worker scaffold ships inside the CLI (not in this repo). Worker execution must be enabled per app by a platform administrator before the first worker deployment takes effect.
+The app has no worker today. PAS can host one later for schedules, webhooks,
+or server routes if those features require it.
 
 ## What's in here
 
 - `web/` — Vite + React + TypeScript app, ESM-only, Tailwind 4 via CSS variables.
-- `web/src/App.tsx` — Starter component with `initPro()` + `useAuth()` and app-owned shell branding.
+- `web/src/App.tsx` — Lango Learn shell with `initPro()` + `useAuth()` and app-owned branding.
 - `web/src/index.css` — Platform design system (Manrope + Fraunces fonts, full light/dark theme tokens).
 - `web/index.html` — App-owned PWA and link-preview meta tags, font preloading, analytics script.
 - `web/public/icon-192.png` and `web/public/icon-512.png` — browser and install icons.
@@ -31,19 +25,6 @@ This adds a `worker/` directory for those workloads. `worker/` is absent by defa
 - `package.json` — pnpm workspace, `dev` / `build` / `typecheck` scripts. `prebuild` runs platform compliance check.
 - `.github/workflows/` — deploy (R2, keyless OIDC), compliance (MIT + brand + PWA), CI (typecheck); worker step runs only when `worker/package.json` exists.
 - `.gitignore` — excludes node_modules, dist, .env files.
-
-## Scaffolding manually
-
-If you really want to scaffold by hand:
-
-```bash
-cp -r ~/dev/stores/pas/templates/template-app my-app
-cd my-app
-find . -type f \( -name "*.json" -o -name "*.tsx" -o -name "*.ts" -o -name "*.html" -o -name "*.md" -o -name "*.yaml" \) \
-  -not -path "*/node_modules/*" -exec sed -i '' "s/lango-learn/my-app/g" {} \;
-rm -rf .git && git init
-pnpm install && pnpm dev
-```
 
 ## License
 

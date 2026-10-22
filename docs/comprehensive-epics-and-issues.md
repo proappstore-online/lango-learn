@@ -52,7 +52,7 @@ retained in [research-duolingo-product.md](research-duolingo-product.md).
 | ID | Issue | Done when | Depends on |
 | --- | --- | --- | --- |
 | LNG-010 | Scaffold compliant PAS app | React/Vite/TS, SDK, ProShell, typecheck, build, `pas check`, and live smoke test pass. | PAS app ownership |
-| LNG-011 | Record architecture decisions | Client/server boundaries, UUID/time/error/pagination conventions, content versions, and action naming are documented. | LNG-010 |
+| LNG-011 | Record architecture decisions | Client/server boundaries, UUID/time/error/pagination conventions, content versions, and action naming are documented in [architecture.md](architecture.md). | LNG-010 |
 | LNG-012 | Establish development quality gates | Lint, unit, migration, action-authorization, build, and Playwright jobs run on pull requests. | LNG-010 |
 | LNG-013 | Establish mobile/accessibility baseline | 375px layout, 44px controls, focus, contrast, reduced motion, and no horizontal scroll have automated/manual checks. | LNG-010 |
 | LNG-014 | Create environment/config contract | Feature flags, safe defaults, media limits, supported browsers, and no-client-secret rule are documented. | LNG-011 |

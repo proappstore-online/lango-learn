@@ -7,22 +7,22 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path) => readFileSync(resolve(root, path), 'utf8')
 
-test('the starter uses independently branded shell controls', () => {
+test('Lango Learn uses independently branded shell controls', () => {
   const app = read('web/src/App.tsx')
 
-  assert.match(app, /<ProShell app=\{app\} appName="lango-learn" nav=\{NAV\} branding="app">/)
+  assert.match(app, /<ProShell app=\{app\} appName="Lango Learn" nav=\{NAV\} branding="app">/)
   assert.doesNotMatch(app, /Built for ProAppStore|href="https:\/\/proappstore\.online"/)
 })
 
-test('public starter metadata and manifest are neutral', () => {
+test('Lango Learn public metadata and manifest use its own brand', () => {
   const html = read('web/index.html')
   const vite = read('web/vite.config.ts')
 
-  assert.match(html, /<title>lango-learn<\/title>/)
-  assert.match(html, /content="Explore lango-learn\."/)
+  assert.match(html, /<title>Lango Learn<\/title>/)
+  assert.match(html, /content="Lango Learn is preparing original lessons for thoughtful language practice\."/)
   assert.doesNotMatch(html, /ProAppStore/)
-  assert.match(vite, /name: 'lango-learn'/)
-  assert.match(vite, /description: 'Explore lango-learn\.'/)
+  assert.match(vite, /name: 'Lango Learn'/)
+  assert.match(vite, /description: 'Original lessons for thoughtful language practice are in preparation\.'/)
   assert.doesNotMatch(vite, /ProAppStore/)
 })
 
