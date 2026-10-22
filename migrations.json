@@ -11,6 +11,10 @@
     {
       "name": "0003_active_session_guard",
       "sql": "CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_lesson_session ON learning_sessions (user_id, lesson_id) WHERE status = 'active'; CREATE UNIQUE INDEX IF NOT EXISTS idx_one_review_exposure ON learning_exposures (user_id, session_id, exercise_id) WHERE exposure_kind = 'review'"
+    },
+    {
+      "name": "0004_guest_lesson_imports",
+      "sql": "CREATE TABLE IF NOT EXISTS guest_lesson_imports (\n  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, lesson_key TEXT NOT NULL,\n  sample_version INTEGER NOT NULL CHECK (sample_version = 1),\n  completed_steps INTEGER NOT NULL CHECK (completed_steps BETWEEN 0 AND 2),\n  outcome TEXT NOT NULL CHECK (outcome IN ('imported', 'kept_existing')),\n  client_saved_at INTEGER NOT NULL CHECK (client_saved_at >= 0),\n  created_at INTEGER NOT NULL,\n  FOREIGN KEY (user_id) REFERENCES learner_profiles (user_id)\n);\nCREATE INDEX IF NOT EXISTS idx_guest_imports_user ON guest_lesson_imports (user_id, lesson_key, created_at DESC, id DESC)"
     }
   ]
 }

@@ -732,6 +732,53 @@
           "reason": "PAS app role grants access to shared course and report records in this app-isolated D1 database; actor identity is derived from the session."
         }
       }
+    },
+    {
+      "name": "import_guest_lesson",
+      "description": "After sign-in, claim one unverified local sample checkpoint for the caller; immutable guest-session UUID makes retries safe",
+      "operation": "batch",
+      "statements": [
+        "INSERT OR IGNORE INTO learner_profiles (id,user_id,created_at,updated_at) SELECT :__uuid,:__user_id,:__now,:__now WHERE NOT EXISTS (SELECT 1 FROM learner_profiles WHERE user_id=:__user_id) AND :guest_session_id=lower(:guest_session_id) AND length(:guest_session_id)=36 AND substr(:guest_session_id,9,1)='-' AND substr(:guest_session_id,14,1)='-' AND substr(:guest_session_id,19,1)='-' AND substr(:guest_session_id,24,1)='-' AND length(replace(:guest_session_id,'-',''))=32 AND lower(replace(:guest_session_id,'-','')) NOT GLOB '*[^0-9a-f]*' AND typeof(:completed_steps)='integer' AND :completed_steps BETWEEN 0 AND 2 AND typeof(:client_saved_at)='integer' AND :client_saved_at>=0 AND NOT EXISTS (SELECT 1 FROM guest_lesson_imports WHERE id=:guest_session_id)",
+        "INSERT OR IGNORE INTO learner_preferences (id,user_id,created_at,updated_at) SELECT :__uuid,:__user_id,:__now,:__now WHERE NOT EXISTS (SELECT 1 FROM learner_preferences WHERE user_id=:__user_id) AND :guest_session_id=lower(:guest_session_id) AND length(:guest_session_id)=36 AND substr(:guest_session_id,9,1)='-' AND substr(:guest_session_id,14,1)='-' AND substr(:guest_session_id,19,1)='-' AND substr(:guest_session_id,24,1)='-' AND length(replace(:guest_session_id,'-',''))=32 AND lower(replace(:guest_session_id,'-','')) NOT GLOB '*[^0-9a-f]*' AND typeof(:completed_steps)='integer' AND :completed_steps BETWEEN 0 AND 2 AND typeof(:client_saved_at)='integer' AND :client_saved_at>=0 AND NOT EXISTS (SELECT 1 FROM guest_lesson_imports WHERE id=:guest_session_id)",
+        "INSERT OR IGNORE INTO guest_lesson_imports (id,user_id,lesson_key,sample_version,completed_steps,outcome,client_saved_at,created_at) SELECT :guest_session_id,:__user_id,'sample-greetings',1,:completed_steps,CASE WHEN EXISTS (SELECT 1 FROM guest_lesson_imports prior WHERE prior.user_id=:__user_id AND prior.lesson_key='sample-greetings' AND prior.completed_steps>=:completed_steps) THEN 'kept_existing' ELSE 'imported' END,:client_saved_at,:__now WHERE :guest_session_id=lower(:guest_session_id) AND length(:guest_session_id)=36 AND substr(:guest_session_id,9,1)='-' AND substr(:guest_session_id,14,1)='-' AND substr(:guest_session_id,19,1)='-' AND substr(:guest_session_id,24,1)='-' AND length(replace(:guest_session_id,'-',''))=32 AND lower(replace(:guest_session_id,'-','')) NOT GLOB '*[^0-9a-f]*' AND typeof(:completed_steps)='integer' AND :completed_steps BETWEEN 0 AND 2 AND typeof(:client_saved_at)='integer' AND :client_saved_at>=0 AND EXISTS (SELECT 1 FROM learner_profiles WHERE user_id=:__user_id) AND NOT EXISTS (SELECT 1 FROM guest_lesson_imports WHERE id=:guest_session_id)"
+      ],
+      "params": {
+        "guest_session_id": {
+          "type": "string",
+          "description": "Stable random UUID generated in the guest browser"
+        },
+        "completed_steps": {
+          "type": "integer",
+          "description": "Local sample checkpoint (0–2)",
+          "max": 2
+        },
+        "client_saved_at": {
+          "type": "integer",
+          "description": "Untrusted browser timestamp in epoch milliseconds"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "get_guest_import_receipt",
+      "description": "Read only the caller’s immutable local sample import receipt",
+      "operation": "query",
+      "sql": "SELECT id,lesson_key,sample_version,completed_steps,outcome,client_saved_at,created_at FROM guest_lesson_imports WHERE id=:guest_session_id AND user_id=:__user_id LIMIT 1",
+      "params": {
+        "guest_session_id": {
+          "type": "string",
+          "description": "Guest session UUID"
+        }
+      },
+      "requires_auth": true
+    },
+    {
+      "name": "get_guest_lesson_summary",
+      "description": "Read the caller’s best unverified sample checkpoint",
+      "operation": "query",
+      "sql": "SELECT MAX(completed_steps) AS completed_steps,COUNT(*) AS imports FROM guest_lesson_imports WHERE user_id=:__user_id AND lesson_key='sample-greetings' LIMIT 1",
+      "params": {},
+      "requires_auth": true
     }
   ]
 }

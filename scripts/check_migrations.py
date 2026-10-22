@@ -33,7 +33,7 @@ def check_learning_model(connection):
         "learner_profiles", "learner_preferences", "courses", "course_versions",
         "lessons", "exercises", "learning_sessions", "exercise_attempts",
         "learning_exposures", "review_states", "content_reports", "course_releases",
-        "audit_rows",
+        "audit_rows", "guest_lesson_imports",
     }
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert required <= tables, f"missing learning tables: {required - tables}"
@@ -43,11 +43,12 @@ def check_learning_model(connection):
         "idx_review_due", "idx_reports_queue", "idx_reports_user",
         "idx_active_release", "idx_releases_history", "idx_audit_resource",
         "idx_audit_actor", "idx_one_active_lesson_session", "idx_one_review_exposure",
+        "idx_guest_imports_user",
     }
     indexes = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
     assert required_indexes <= indexes, f"missing learning indexes: {required_indexes - indexes}"
     owned = required & {"learner_profiles", "learner_preferences", "learning_sessions",
-                        "exercise_attempts", "learning_exposures", "review_states", "content_reports"}
+                        "exercise_attempts", "learning_exposures", "review_states", "content_reports", "guest_lesson_imports"}
     for table in owned:
         columns = {row[1]: row for row in connection.execute(f"PRAGMA table_info({table})")}
         assert columns["user_id"][3] == 1, f"{table}.user_id must be required"
@@ -87,6 +88,7 @@ def check_learning_model(connection):
                        "VALUES ('release-1','course','version-1',1,'active','editor',1000,1000)")
     connection.execute("INSERT INTO audit_rows (id,actor_user_id,resource_type,resource_id,action,created_at) "
                        "VALUES ('audit-1','editor','course_release','release-1','publish',1000)")
+    connection.execute("INSERT INTO guest_lesson_imports VALUES ('guest-a','alice','sample-greetings',1,2,'imported',1000,1000)")
 
     def rejects(sql):
         try:
@@ -109,6 +111,7 @@ def check_learning_model(connection):
             "VALUES ('bad-release','course','version-2',2,'active','editor',1000,1000)")
     rejects("INSERT INTO learner_preferences (id,user_id,reminders_enabled,created_at,updated_at) "
             "VALUES ('bad-preference','mallory',0,1000,1000)")
+    rejects("INSERT INTO guest_lesson_imports VALUES ('bad-guest','mallory','sample-greetings',1,2,'imported',1000,1000)")
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
@@ -127,6 +130,7 @@ def main():
         apply_migrations(connection, migrations)
         assert connection.execute("SELECT title FROM items WHERE id='legacy'").fetchone() == ("Legacy",)
         assert connection.execute("SELECT user_id FROM exercise_attempts WHERE id='attempt-a'").fetchone() == ("alice",)
+        assert connection.execute("SELECT user_id FROM guest_lesson_imports WHERE id='guest-a'").fetchone() == ("alice",)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     print(f"Migration gate passed: {len(migrations)} additive, ordered, idempotent migration(s)")
 

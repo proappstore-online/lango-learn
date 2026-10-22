@@ -18,6 +18,7 @@ EXPECTED = {
     "create_course", "create_course_version", "create_lesson", "create_exercise",
     "submit_version_for_review", "approve_course_version", "return_version_to_draft",
     "publish_course_version", "retire_course_release", "list_staff_reports", "update_report_status",
+    "import_guest_lesson", "get_guest_import_receipt", "get_guest_lesson_summary",
 }
 
 STAFF_ROLES = {
@@ -31,6 +32,8 @@ STAFF_ROLES = {
 
 
 def execute(connection, tool, user, *, now=1000, roles=(), **params):
+    if tool.get("requires_auth") and not user:
+        raise PermissionError(f"{tool['name']}: PAS session required")
     required_roles = tool.get("auth", {}).get("app_roles", [])
     if required_roles and not set(required_roles).intersection(roles):
         raise PermissionError(f"{tool['name']}: PAS app role required")
@@ -161,7 +164,74 @@ def main():
         assert call(connection, "list_content_reports", "bob") == []
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         check_staff_actions(connection, call)
+        check_guest_imports(connection, call)
     print(f"Action authorization gate passed: {len(tools)} actions, ownership, replay and stale-write fixtures")
+
+
+def check_guest_imports(connection, call):
+    def count():
+        return connection.execute("SELECT COUNT(*) FROM guest_lesson_imports").fetchone()[0]
+
+    guest_id = str(uuid.uuid4())
+    params = dict(guest_session_id=guest_id, completed_steps=2, client_saved_at=1000)
+    before = count()
+    try:
+        call(connection, "import_guest_lesson", None, now=2000, **params)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("guest import accepted before sign-in")
+    assert count() == before
+    assert call(connection, "import_guest_lesson", "alice", now=2000, **params) == [0, 0, 1]
+    assert call(connection, "get_guest_import_receipt", "alice", guest_session_id=guest_id)[0][3:5] == (2, "imported")
+    assert call(connection, "get_guest_import_receipt", "bob", guest_session_id=guest_id) == []
+    assert call(connection, "import_guest_lesson", "alice", now=3000, **params) == [0, 0, 0]
+    assert call(connection, "import_guest_lesson", "alice", now=3000, **dict(params, completed_steps=1)) == [0, 0, 0]
+    assert call(connection, "import_guest_lesson", "bob", now=3000, **params) == [0, 0, 0]
+    assert call(connection, "import_guest_lesson", "unclaimed-user", now=3000, **params) == [0, 0, 0]
+    assert connection.execute("SELECT 1 FROM learner_profiles WHERE user_id='unclaimed-user'").fetchone() is None
+    assert call(connection, "get_guest_lesson_summary", "bob")[0] == (None, 0)
+    lower = dict(guest_session_id=str(uuid.uuid4()), completed_steps=1, client_saved_at=1000)
+    assert call(connection, "import_guest_lesson", "alice", now=3000, **lower) == [0, 0, 1]
+    assert call(connection, "get_guest_import_receipt", "alice", guest_session_id=lower['guest_session_id'])[0][4] == "kept_existing"
+    assert call(connection, "get_guest_lesson_summary", "alice")[0] == (2, 2)
+    for invalid in (dict(params, guest_session_id="not-a-uuid"), dict(params, guest_session_id=str(uuid.uuid4()).upper()), dict(params, guest_session_id=str(uuid.uuid4()), completed_steps=3), dict(params, guest_session_id=str(uuid.uuid4()), client_saved_at=-1)):
+        assert call(connection, "import_guest_lesson", "alice", now=3000, **invalid) == [0, 0, 0]
+    assert count() == before + 2
+    # A rejected request leaves no partial account rows; correcting it can be retried.
+    missing = str(uuid.uuid4())
+    assert call(connection, "import_guest_lesson", "new-user", now=3000, guest_session_id=missing, completed_steps=3, client_saved_at=1000) == [0, 0, 0]
+    assert connection.execute("SELECT 1 FROM guest_lesson_imports WHERE id=?", (missing,)).fetchone() is None
+    assert connection.execute("SELECT 1 FROM learner_profiles WHERE user_id='new-user'").fetchone() is None
+    assert call(connection, "import_guest_lesson", "new-user", now=3000, guest_session_id=missing, completed_steps=1, client_saved_at=1000) == [1, 1, 1]
+
+    class InterruptedBatch:
+        def __init__(self, db):
+            self.db = db
+            self.statements = 0
+        def __enter__(self):
+            self.db.__enter__()
+            return self
+        def __exit__(self, *args):
+            return self.db.__exit__(*args)
+        def execute(self, sql, bindings):
+            self.statements += 1
+            if self.statements == 3:
+                raise sqlite3.OperationalError("synthetic third-statement failure")
+            return self.db.execute(sql, bindings)
+
+    interrupted_id = str(uuid.uuid4())
+    try:
+        call(InterruptedBatch(connection), "import_guest_lesson", "interrupted-user", now=3000,
+             guest_session_id=interrupted_id, completed_steps=1, client_saved_at=1000)
+    except sqlite3.OperationalError:
+        pass
+    else:
+        raise AssertionError("interrupted batch unexpectedly succeeded")
+    assert connection.execute("SELECT 1 FROM learner_profiles WHERE user_id='interrupted-user'").fetchone() is None
+    assert connection.execute("SELECT 1 FROM guest_lesson_imports WHERE id=?", (interrupted_id,)).fetchone() is None
+    assert call(connection, "import_guest_lesson", "interrupted-user", now=4000,
+                guest_session_id=interrupted_id, completed_steps=1, client_saved_at=1000) == [1, 1, 1]
 
 
 def check_staff_actions(connection, call):
