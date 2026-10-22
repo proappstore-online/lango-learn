@@ -35,9 +35,9 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'lango-learn',
-        short_name: 'lango-learn',
-        description: 'Explore lango-learn.',
+        name: 'Lango Learn',
+        short_name: 'Lango Learn',
+        description: 'Original lessons for thoughtful language practice are in preparation.',
         start_url: '/',
         scope: '/',
         display: 'standalone',

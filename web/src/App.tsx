@@ -2,42 +2,40 @@ import { initPro, ProShell, PageHeader, useAuth, type NavItem } from '@proappsto
 
 const app = initPro({ appId: 'lango-learn' })
 
-/**
- * The app's screens. ProShell renders them as its main navigation — a
- * <nav aria-label="Main"> in the topbar that marks the current screen and
- * collapses to a menu on small screens — and uses each `title` as the tab title.
- * Add a screen here and in <Screens />; never put navigation on a page.
- */
 const NAV: NavItem[] = [
-  { label: 'Home', href: '/', title: 'lango-learn' },
-  { label: 'About', href: '/about', title: 'About — lango-learn' },
+  { label: 'Home', href: '/', title: 'Lango Learn' },
+  { label: 'About', href: '/about', title: 'About — Lango Learn' },
 ]
 
 export default function App() {
   return (
-    <ProShell app={app} appName="lango-learn" nav={NAV} branding="app">
-      <Screens />
+    <ProShell app={app} appName="Lango Learn" nav={NAV} branding="app">
+      {window.location.pathname === '/about' ? <About /> : <Home />}
     </ProShell>
   )
-}
-
-/** Nav items are plain links: a click loads the path and the platform serves the app for it. */
-function Screens() {
-  switch (window.location.pathname) {
-    case '/about': return <About />
-    default: return <Home />
-  }
 }
 
 function Home() {
   const { user } = useAuth()
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-10">
-      <PageHeader title="lango-learn" description={`Signed in as ${user?.name ?? 'you'}.`} />
-      <p className="text-sm text-[var(--muted)]">
-        Edit <code className="rounded bg-[var(--line)] px-1.5 py-0.5 text-xs">web/src/App.tsx</code> to start building.
-        Each screen starts with a <code className="rounded bg-[var(--line)] px-1.5 py-0.5 text-xs">PageHeader</code> and is listed in <code className="rounded bg-[var(--line)] px-1.5 py-0.5 text-xs">NAV</code>.
+    <div className="mx-auto w-full max-w-3xl px-6 py-10 sm:py-16">
+      <PageHeader
+        title="Lango Learn"
+        description={user ? `Welcome, ${user.name ?? 'learner'}.` : 'A home for thoughtful language practice.'}
+      />
+      <section className="mt-8 rounded-2xl border border-[var(--line-strong)] bg-[var(--panel-strong)] p-6 shadow-[var(--shadow-card)] sm:p-8" aria-labelledby="welcome-title">
+        <p className="text-sm font-semibold uppercase tracking-widest text-[var(--accent-deep)]">Coming together</p>
+        <h2 id="welcome-title" className="display-font mt-3 text-3xl font-semibold leading-tight sm:text-4xl">
+          Learn at your own pace.
+        </h2>
+        <p className="mt-4 max-w-2xl leading-7 text-[var(--muted)]">
+          We’re building original lessons with clear explanations and room to review.
+          Courses are still being prepared, so there are no lessons to start yet.
+        </p>
+      </section>
+      <p className="mt-6 text-sm leading-6 text-[var(--muted)]">
+        Visit About to learn how we’re approaching the first course.
       </p>
     </div>
   )
@@ -45,12 +43,18 @@ function Home() {
 
 function About() {
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-10">
-      <PageHeader title="About" description="What lango-learn is for." />
-      <p className="text-sm text-[var(--muted)]">
-        Replace this screen with your own. The error boundary, loading fallback, toasts
-        (<code className="rounded bg-[var(--line)] px-1.5 py-0.5 text-xs">useToast</code>), offline banner and skip link come with ProShell.
-      </p>
+    <div className="mx-auto w-full max-w-3xl px-6 py-10 sm:py-16">
+      <PageHeader title="About Lango Learn" description="Our approach to the first course." />
+      <div className="mt-8 space-y-5 leading-7 text-[var(--muted)]">
+        <p>
+          Lango Learn is being designed around a small, carefully reviewed first course.
+          Lessons will connect practical goals with useful feedback and opportunities to revisit what you’ve learned.
+        </p>
+        <p>
+          We’re still choosing and preparing that course. This early app shell lets us establish
+          the platform and test the experience before learning content is available.
+        </p>
+      </div>
     </div>
   )
 }
