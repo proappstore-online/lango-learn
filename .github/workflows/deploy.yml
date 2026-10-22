@@ -18,7 +18,8 @@ jobs:
   deploy:
     # template-app itself is never served (no registry entry) and its build
     # fails its own placeholder check by design; the apps copied from it deploy.
-    if: github.event.repository.name != 'template-app'
+    # Quality-gate-only commits can opt out of the main-branch auto-deploy.
+    if: github.event.repository.name != 'template-app' && !contains(github.event.head_commit.message, '[no-deploy]')
     runs-on: ubuntu-latest
     outputs:
       has_e2e: ${{ steps.e2e-check.outputs.has_e2e }}

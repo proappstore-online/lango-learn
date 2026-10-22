@@ -9,3 +9,5 @@ dist/
 .vibe-check/
 .pas.json
 .astro/
+playwright-report/
+test-results/

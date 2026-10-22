@@ -6,9 +6,17 @@ are planned in the [backlog](docs/comprehensive-epics-and-issues.md). The
 [architecture decisions](docs/architecture.md) record the client/server
 boundary and conventions for the upcoming course and data work.
 
-Run it locally with `pnpm install && pnpm dev`. Use `pnpm typecheck`,
-`pnpm test`, and `pnpm build` to check it; the build runs the PAS compliance
-check before compiling the web app.
+Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
+CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:migrations`,
+`pnpm check:actions`, `pnpm build`, and `pnpm test:e2e`. The build runs the PAS
+compliance check before compiling the web app. To run the browser checks locally,
+install Chromium once with `pnpm exec playwright install chromium`.
+
+The migration gate validates additive, ordered, idempotent D1 SQL in a fresh
+SQLite database. The action gate executes every current `mcp.json` action as
+two learners and rejects untested new actions. The browser checks exercise the
+signed-out ProShell entry on `/` and `/about`; authenticated lesson flows will
+need their own fixtures when they are added.
 
 The app has no worker today. PAS can host one later for schedules, webhooks,
 or server routes if those features require it.
@@ -23,7 +31,7 @@ or server routes if those features require it.
 - `web/public/og-image.png` — neutral 1200x630 shared-link preview image for `https://lango-learn.proappstore.online`.
 - `marketing/` — Astro + Tailwind (pinned) static marketing site for `https://about-lango-learn.proappstore.online`: home, Privacy Policy and Terms & Conditions. Copy, owner, contact and brand colours (mapped into the Tailwind theme) live in `marketing/src/site.ts`. `pnpm build:marketing` writes static HTML to `marketing/dist/`; `pnpm dev:marketing` previews it.
 - `package.json` — pnpm workspace, `dev` / `build` / `typecheck` scripts. `prebuild` runs platform compliance check.
-- `.github/workflows/` — deploy (R2, keyless OIDC), compliance (MIT + brand + PWA), CI (typecheck); worker step runs only when `worker/package.json` exists.
+- `.github/workflows/` — deploy (R2, keyless OIDC), compliance (MIT + brand + PWA), CI (seven checks); worker step runs only when `worker/package.json` exists.
 - `.gitignore` — excludes node_modules, dist, .env files.
 
 ## License
