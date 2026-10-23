@@ -40,3 +40,37 @@ test('rights, accessibility, regional, and markup failures are rejected', () => 
   assert.match(check(p => { p.lessons[0].exercises[0].regionLocales = ['fr-FR'] }), /outside the course/)
   assert.match(check(p => { p.lessons[0].exercises[0].prompt.text = '<script>x</script>' }), /markup/)
 })
+
+test('all required exercise content and provenance fields are checked', () => {
+  const invalid = [
+    [p => { p.lessons[0].exercises[0].prompt.accessibleName = '' }, /accessibleName/],
+    [p => { p.lessons[0].exercises[0].response.text = '' }, /response.text/],
+    [p => { p.lessons[0].exercises[0].variants[0].reason = '' }, /variants\[0\].reason/],
+    [p => { p.lessons[0].exercises[0].hint = '' }, /hint/],
+    [p => { p.lessons[0].exercises[0].explanation = '' }, /explanation/],
+    [p => { p.lessons[0].exercises[0].distractors = [] }, /recognition needs distractors/],
+    [p => { p.lessons[0].exercises[0].provenance.rightsOwner = '' }, /rightsOwner/],
+    [p => { p.lessons[0].exercises[0].provenance.type = 'external' }, /only original/],
+    [p => { p.assets[0].rights.owner = '' }, /rights.owner/],
+    [p => { p.assets[0].origin.source = '' }, /origin.source/],
+    [p => { p.assets[0].accessibility.nonAudioAlternative = false }, /nonAudioAlternative/],
+    [p => { p.assets[0].mimeType = {} }, /mimeType/],
+  ]
+  for (const [change, expected] of invalid) assert.match(check(change), expected)
+})
+
+test('image metadata needs an accessible description unless decorative', () => {
+  const asImage = p => {
+    const asset = p.assets[0]
+    asset.mimeType = 'image/png'
+    delete asset.durationSeconds
+    delete asset.locale
+    delete asset.accent
+    asset.accessibility.transcript = null
+    asset.accessibility.altText = 'Synthetic image'
+  }
+  assert.equal(check(asImage), '')
+  assert.match(check(p => { asImage(p); p.assets[0].accessibility.altText = null }), /altText/)
+  assert.equal(check(p => { asImage(p); p.assets[0].accessibility.decorative = true; p.assets[0].accessibility.altText = null }), '')
+  assert.match(check(p => { asImage(p); p.assets[0].accessibility.transcript = 'wrong field' }), /transcript/)
+})

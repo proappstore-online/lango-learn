@@ -6,6 +6,10 @@ editor or import pipeline exists. Exit status 0 means the package passes the
 structural checks; errors carry JSON paths. The committed example is synthetic
 fixture data, not approved course content. Keep draft media in private storage;
 `storageKey` is a relative private key, never a public URL or credential.
+The matching TypeScript authoring shapes live in `web/src/content-package.ts`.
+Type checking catches missing fields and invalid literal values for TS authors;
+the Python validator remains the runtime gate for JSON input, text, references,
+rights metadata, and contiguous sequence positions.
 
 `schemaVersion` selects this contract; `packageVersion` and `courseVersionId`
 identify the immutable content snapshot. `sourceLocale`, `targetLocale`, and

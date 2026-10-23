@@ -104,10 +104,11 @@ def validate(package):
             fail(path + '.id', 'duplicate asset')
         asset_ids.add(aid)
         mime = asset.get('mimeType')
-        if mime not in MEDIA_TYPES:
+        if not isinstance(mime, str) or mime not in MEDIA_TYPES:
             fail(path + '.mimeType', 'unsupported media format')
         size = asset.get('byteSize')
-        if type(size) is not int or not 0 < size <= MEDIA_TYPES.get(mime, 0):
+        max_size = MEDIA_TYPES.get(mime, 0) if isinstance(mime, str) else 0
+        if type(size) is not int or not 0 < size <= max_size:
             fail(path + '.byteSize', 'invalid size for format')
         key = string(asset.get('storageKey'), path + '.storageKey')
         if key.startswith('/') or '..' in key or '://' in key:
@@ -144,7 +145,15 @@ def validate(package):
         if isinstance(mime, str) and mime.startswith('image/'):
             if access.get('decorative') is not True:
                 string(access.get('altText'), path + '.accessibility.altText')
+            elif access.get('altText') is not None and not isinstance(access.get('altText'), str):
+                fail(path + '.accessibility.altText', 'must be text or null')
+            if access.get('transcript') is not None:
+                fail(path + '.accessibility.transcript', 'only valid for audio')
         elif isinstance(mime, str) and mime.startswith('audio/'):
+            if access.get('altText') is not None:
+                fail(path + '.accessibility.altText', 'only valid for images')
+            if access.get('decorative') is True:
+                fail(path + '.accessibility.decorative', 'audio cannot be decorative')
             string(access.get('transcript'), path + '.accessibility.transcript')
             if access.get('nonAudioAlternative') is not True:
                 fail(path + '.accessibility.nonAudioAlternative', 'required for audio')
