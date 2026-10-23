@@ -343,12 +343,26 @@ def check_staff_actions(connection, call):
                     stable_content_id="exercise-a", content_version=0, position=0,
                     kind="recognition", evaluator_policy_version="policy-1", expected_updated_at=3000)
     assert request("create_exercise", "ed", editor, now=4000, **exercise) == [1, 1, 1]
+    gap = dict(exercise, request_id=rid(), exercise_id=rid(), stable_content_id="gap",
+               position=2, expected_updated_at=4000)
+    before = audit_count()
+    assert request("create_exercise", "ed", editor, now=5000, **gap) == [0, 0, 0]
+    assert audit_count() == before
     duplicate = dict(exercise, request_id=rid(), exercise_id=rid(), stable_content_id="exercise-b",
                      expected_updated_at=4000)
     before = audit_count()
     assert request("create_exercise", "ed", editor, now=5000, **duplicate) == [0, 0, 0]
     assert audit_count() == before
     transition = dict(request_id=rid(), version_id=ids["version"], expected_updated_at=4000)
+    # Simulate a legacy/directly inserted gap and prove review cannot admit it.
+    legacy_gap_id = rid()
+    connection.execute("INSERT INTO exercises VALUES (?,?,?,?,?,?,?,?)",
+                       (legacy_gap_id, ids["lesson"], "legacy-gap", 0, 2,
+                        "recognition", "policy-1", 4000))
+    before = audit_count()
+    assert request("submit_version_for_review", "ed", editor, now=5000, **transition) == [0, 0]
+    assert audit_count() == before
+    connection.execute("DELETE FROM exercises WHERE id=?", (legacy_gap_id,))
     assert request("submit_version_for_review", "ed", editor, now=5000, **transition) == [1, 1]
     try:
         request("approve_course_version", "ed", editor, now=6000,

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "packageVersion": "synthetic-1",
+  "courseVersionId": "synthetic-course-version",
+  "sourceLocale": "en-US",
+  "targetLocale": "es-ES",
+  "regionalLocales": ["es-MX"],
+  "objectives": [{"id": "synthetic-objective", "locale": "es-ES"}],
+  "assets": [
+    {
+      "id": "synthetic-audio",
+      "mimeType": "audio/mpeg",
+      "byteSize": 1000,
+      "durationSeconds": 2,
+      "locale": "es-ES",
+      "accent": "synthetic studio voice",
+      "storageKey": "draft/synthetic-audio.mp3",
+      "origin": {"type": "original_lango", "creator": "Lango Learn test fixture", "source": "synthetic fixture"},
+      "rights": {"owner": "Lango Learn test fixture", "licence": "owned-original", "territories": ["AU"], "attribution": "Lango Learn test fixture", "expiresOn": null, "replacement": "replace synthetic fixture"},
+      "accessibility": {"altText": null, "decorative": false, "transcript": "Synthetic audio", "nonAudioAlternative": true}
+    }
+  ],
+  "lessons": [{
+    "id": "synthetic-lesson",
+    "exercises": [{
+      "id": "synthetic-exercise",
+      "position": 0,
+      "kind": "recognition",
+      "objectiveIds": ["synthetic-objective"],
+      "prompt": {"text": "Select the synthetic response", "locale": "en-US", "accessibleName": "Select one answer"},
+      "response": {"text": "sample-a", "locale": "es-ES"},
+      "variants": [{"text": "sample-b", "locale": "es-MX", "reason": "Synthetic regional variant"}],
+      "hint": "Choose the first sample",
+      "explanation": "This is test data only.",
+      "distractors": ["sample-c"],
+      "mediaAssetIds": ["synthetic-audio"],
+      "regionLocales": ["es-ES", "es-MX"],
+      "provenance": {"type": "original_lango", "creator": "Lango Learn test fixture", "source": "synthetic fixture", "rightsOwner": "Lango Learn test fixture"}
+    }]
+  }]
+}
