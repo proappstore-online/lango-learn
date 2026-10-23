@@ -15,6 +15,8 @@ The [staff role contract](docs/staff-actions.md) defines the four independent
 PAS app grants and their action permissions.
 The [content package contract](docs/content-package.md) defines the pre-editor
 JSON format and validator for original exercise content.
+The [local author preview](docs/author-preview.md) renders validated private
+packages for review without shipping drafts in the app bundle.
 
 Run it locally with `pnpm install && pnpm dev`. The pull-request and main-branch
 CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:languages`, `pnpm check:migrations`,

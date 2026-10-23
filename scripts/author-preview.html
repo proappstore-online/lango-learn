@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lango Learn author preview</title>
+<style>
+  :root{font:16px/1.5 system-ui,sans-serif;color:#172027;background:#f5f7f6}*{box-sizing:border-box}
+  body{margin:0}main{max-width:68rem;margin:auto;padding:1rem}header,.card{background:white;border:1px solid #cbd5d1;border-radius:1rem;padding:1.25rem;margin:1rem 0}
+  h1,h2,h3,p{overflow-wrap:anywhere}h1{font-size:1.8rem}h2{font-size:1.35rem}label{font-weight:700;display:block;margin:.8rem 0 .3rem}
+  select,input,button{font:inherit;min-height:44px;border-radius:.6rem;border:1px solid #64776e;padding:.5rem .8rem;max-width:100%}
+  button{cursor:pointer;background:#e7f5eb}button:hover{background:#c9e9d2}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #155f9b;outline-offset:2px}
+  button[disabled]{opacity:.6;cursor:default}.controls{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center}.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.7rem}
+  .choices button{text-align:left}.note{color:#43564b}.feedback{border-left:4px solid #206f44;padding:.5rem 1rem;background:#eef8f1;margin-top:1rem}
+  .frame{max-width:20rem;margin:1rem auto;border:2px solid #718478;border-radius:1.25rem;padding:1rem;background:#fff;min-width:0}
+  .frame.wide{max-width:100%}audio{max-width:100%;width:100%}.media img{max-width:100%;height:auto}.media{margin:1rem 0}
+  @media(max-width:400px){main{padding:.5rem}header,.card{padding:1rem}.frame{margin:1rem 0}}
+</style></head><body><main>
+<header><h1>Lango Learn · author preview</h1><p class="note">Local draft preview. No results are saved or sent. Evaluation here is provisional until the learner evaluator is implemented.</p>
+<p id="version"></p><div class="controls"><label for="lesson">Lesson</label><select id="lesson"></select><label for="width">Layout</label><select id="width"><option value="small">Small screen · 320px</option><option value="wide">Wide screen</option></select></div></header>
+<section class="card" aria-labelledby="exercise-title"><h2 id="exercise-title">Exercise</h2><p id="position"></p><div id="frame" class="frame"><div id="exercise"></div></div></section>
+<section class="card" aria-labelledby="review-title"><h2 id="review-title">Author review</h2><div id="review"></div></section>
+</main><script>
+const pkg = /*PACKAGE_JSON*/;
+const mediaFiles = /*MEDIA_JSON*/;
+const $ = id => document.getElementById(id);
+const state = {lesson: 0, position: 0, attempts: 0, result: null, hint: false};
+const sortedExercises = () => [...pkg.lessons[state.lesson].exercises].sort((a,b) => a.position-b.position);
+const current = () => sortedExercises()[state.position];
+function node(tag, value, attrs={}) { const el=document.createElement(tag); if(value != null) el.textContent=value; for(const [key,val] of Object.entries(attrs)) el.setAttribute(key,val); return el; }
+function clear(el){el.replaceChildren();}
+function evaluate(ex, answer){
+  const accepted=[ex.response,...ex.variants];
+  const match=accepted.find(item => item.text === answer);
+  return {correct: Boolean(match), variant: match && match !== ex.response ? match.reason : null};
+}
+function renderMedia(ex, root){
+  for(const id of ex.mediaAssetIds){
+    const asset=pkg.assets.find(item=>item.id===id);
+    if(!asset) continue;
+    const block=node('div',null,{class:'media'});
+    const file=mediaFiles[id];
+    if(asset.mimeType.startsWith('audio/')){
+      block.append(node('p',`Audio · ${asset.locale} · ${asset.accent}`));
+      if(file){const audio=node('audio',null,{controls:'',preload:'none','aria-label':`Play ${asset.accessibility.transcript}`});const source=node('source',null,{src:`media/${encodeURIComponent(file)}`,type:asset.mimeType});audio.append(source);block.append(audio);}
+      else block.append(node('p','Audio file unavailable in this preview.',{role:'status'}));
+      block.append(node('p',`Transcript: ${asset.accessibility.transcript}`));
+      block.append(node('p','Non-audio alternative: read the transcript and continue with the answer controls.'));
+    }else if(file){block.append(node('img',null,{src:`media/${encodeURIComponent(file)}`,alt:asset.accessibility.decorative?'':asset.accessibility.altText}));}
+    else block.append(node('p',`Image file unavailable. ${asset.accessibility.altText || ''}`,{role:'status'}));
+    root.append(block);
+  }
+}
+function showResult(ex, root){
+  if(!state.result) return;
+  const result=node('div',null,{class:'feedback',role:'status','aria-live':'polite'});
+  result.append(node('strong',state.result.correct?'Accepted response.':'Response not accepted.'));
+  result.append(node('p',state.result.correct && state.result.variant?`Accepted variant: ${state.result.variant}`:state.result.correct?'Correct for this draft package.':`Expected: ${ex.response.text}`));
+  result.append(node('p',ex.explanation));
+  root.append(result);
+}
+function submit(answer){const ex=current();state.attempts++;state.result=evaluate(ex,answer);render();}
+function render(){
+  const ex=current(); const root=$('exercise');clear(root);clear($('review'));
+  $('version').textContent=`Package ${pkg.packageVersion} · Course version ${pkg.courseVersionId}`;
+  $('position').textContent=`${pkg.lessons[state.lesson].id} · ${state.position+1} of ${sortedExercises().length} · ${ex.kind}`;
+  root.append(node('h3',ex.prompt.text,{lang:ex.prompt.locale}));
+  root.append(node('p',ex.prompt.accessibleName,{class:'note'}));
+  renderMedia(ex,root);
+  if(ex.kind==='recognition'){
+    const choices=node('div',null,{class:'choices',role:'group','aria-label':ex.prompt.accessibleName});
+    for(const choice of [ex.response.text,...ex.variants.map(v=>v.text),...ex.distractors]){const button=node('button',choice,{type:'button','aria-label':`${ex.prompt.accessibleName}: ${choice}`});button.onclick=()=>submit(choice);choices.append(button);}
+    root.append(choices);
+  }else{
+    const form=node('form');const label=node('label','Your response',{for:'response'});const input=node('input',null,{id:'response',type:'text',autocomplete:'off','aria-label':ex.prompt.accessibleName,lang:ex.response.locale});
+    const button=node('button','Check response',{type:'submit'});form.onsubmit=e=>{e.preventDefault();submit(input.value);};form.append(label,input,button);root.append(form);
+    root.append(node('p',`${ex.kind} is shown as text entry until its learner template is specified.`,{class:'note'}));
+  }
+  const hint=node('button',state.hint?'Hint shown':'Show hint',{type:'button'});hint.disabled=state.hint;hint.onclick=()=>{state.hint=true;render();};root.append(hint);
+  if(state.hint)root.append(node('p',ex.hint,{role:'status'}));
+  showResult(ex,root);
+  const nav=node('div',null,{class:'controls'});
+  const previous=node('button','Previous',{type:'button'});previous.disabled=state.position===0;previous.onclick=()=>move(-1);
+  const next=node('button','Next',{type:'button'});next.disabled=state.position===sortedExercises().length-1;next.onclick=()=>move(1);
+  nav.append(previous,next);root.append(nav);
+  $('review').append(node('p',`Attempts in this preview: ${state.attempts}. Exact text match only; no normalization or partial credit.`));
+  $('review').append(node('p',`Accepted: ${[ex.response.text,...ex.variants.map(v=>v.text)].join(' · ')}`));
+  $('review').append(node('p',`Distractors: ${ex.distractors.join(' · ') || 'None'}`));
+  $('review').append(node('p',`Regional applicability: ${ex.regionLocales.join(', ')}`));
+  $('review').append(node('p',`Original content: ${ex.provenance.creator} · ${ex.provenance.source} · rights ${ex.provenance.rightsOwner}`));
+}
+function move(amount){state.position+=amount;state.result=null;state.hint=false;state.attempts=0;render();}
+for(const [index,lesson] of pkg.lessons.entries()) $('lesson').append(node('option',lesson.id,{value:String(index)}));
+$('lesson').onchange=e=>{state.lesson=Number(e.target.value);state.position=0;state.result=null;state.hint=false;state.attempts=0;render();};
+$('width').onchange=e=>$('frame').classList.toggle('wide',e.target.value==='wide');
+render();
+</script></body></html>
