@@ -12,7 +12,7 @@
   .frame.wide{max-width:100%}audio{max-width:100%;width:100%}.media img{max-width:100%;height:auto}.media{margin:1rem 0}
   @media(max-width:400px){main{padding:.5rem}header,.card{padding:1rem}.frame{margin:1rem 0}}
 </style></head><body><main>
-<header><h1>Lango Learn · author preview</h1><p class="note">Local draft preview. No results are saved or sent. Evaluation here is provisional until the learner evaluator is implemented.</p>
+<header><h1>Lango Learn · author preview</h1><p class="note">Local draft preview. No results are saved or sent. Answer checks use package text; the current learner action records pending_evaluation and does not grade answers.</p>
 <p id="version"></p><div class="controls"><label for="lesson">Lesson</label><select id="lesson"></select><label for="width">Layout</label><select id="width"><option value="small">Small screen · 320px</option><option value="wide">Wide screen</option></select></div></header>
 <section class="card" aria-labelledby="exercise-title"><h2 id="exercise-title">Exercise</h2><p id="position"></p><div id="frame" class="frame"><div id="exercise"></div></div></section>
 <section class="card" aria-labelledby="review-title"><h2 id="review-title">Author review</h2><div id="review"></div></section>
@@ -38,7 +38,14 @@ function renderMedia(ex, root){
     const file=mediaFiles[id];
     if(asset.mimeType.startsWith('audio/')){
       block.append(node('p',`Audio · ${asset.locale} · ${asset.accent}`));
-      if(file){const audio=node('audio',null,{controls:'',preload:'none','aria-label':`Play ${asset.accessibility.transcript}`});const source=node('source',null,{src:`media/${encodeURIComponent(file)}`,type:asset.mimeType});audio.append(source);block.append(audio);}
+      if(file){
+        const audio=node('audio',null,{controls:'',preload:'none','aria-label':`Play ${asset.accessibility.transcript}`});
+        const source=node('source',null,{src:`media/${encodeURIComponent(file)}`,type:asset.mimeType});
+        const failure=node('p','Audio could not be played. Use the transcript below.',{role:'status',hidden:''});
+        const showFailure=()=>failure.removeAttribute('hidden');
+        audio.addEventListener('error',showFailure);source.addEventListener('error',showFailure);
+        audio.append(source);block.append(audio,failure);
+      }
       else block.append(node('p','Audio file unavailable in this preview.',{role:'status'}));
       block.append(node('p',`Transcript: ${asset.accessibility.transcript}`));
       block.append(node('p','Non-audio alternative: read the transcript and continue with the answer controls.'));
@@ -50,9 +57,10 @@ function renderMedia(ex, root){
 function showResult(ex, root){
   if(!state.result) return;
   const result=node('div',null,{class:'feedback',role:'status','aria-live':'polite'});
-  result.append(node('strong',state.result.correct?'Accepted response.':'Response not accepted.'));
-  result.append(node('p',state.result.correct && state.result.variant?`Accepted variant: ${state.result.variant}`:state.result.correct?'Correct for this draft package.':`Expected: ${ex.response.text}`));
+  result.append(node('strong',state.result.correct?'Author check: accepted by package.':'Author check: not accepted by package.'));
+  result.append(node('p',state.result.correct && state.result.variant?`Accepted variant: ${state.result.variant}`:state.result.correct?'The package lists this answer as accepted.':`Expected: ${ex.response.text}`));
   result.append(node('p',ex.explanation));
+  result.append(node('p','Current learner result: pending_evaluation (ungraded).'));
   root.append(result);
 }
 function submit(answer){const ex=current();state.attempts++;state.result=evaluate(ex,answer);render();}
@@ -79,7 +87,7 @@ function render(){
   const previous=node('button','Previous',{type:'button'});previous.disabled=state.position===0;previous.onclick=()=>move(-1);
   const next=node('button','Next',{type:'button'});next.disabled=state.position===sortedExercises().length-1;next.onclick=()=>move(1);
   nav.append(previous,next);root.append(nav);
-  $('review').append(node('p',`Attempts in this preview: ${state.attempts}. Exact text match only; no normalization or partial credit.`));
+  $('review').append(node('p',`Attempts in this preview: ${state.attempts}. The author check uses exact text match only; no normalization or partial credit. This is not the future authoritative evaluator.`));
   $('review').append(node('p',`Accepted: ${[ex.response.text,...ex.variants.map(v=>v.text)].join(' · ')}`));
   $('review').append(node('p',`Distractors: ${ex.distractors.join(' · ') || 'None'}`));
   $('review').append(node('p',`Regional applicability: ${ex.regionLocales.join(', ')}`));

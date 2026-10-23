@@ -20,10 +20,12 @@ the preview shows explicit unavailable states, image descriptions, and audio
 transcripts. Audio controls use browser playback and the declared MIME type.
 
 The preview steps through exercises in checkpoint order, shows prompt and
-accessible name, displays hints and explanations, and compares responses
-exactly with the authored primary response and variants. Wrong responses show
-the expected answer and explanation; variants show their rationale. A 320px
-frame and wide layout let authors inspect reflow. Browser tests cover these
+accessible name, displays hints and explanations, and checks responses
+exactly against the authored primary response and variants. This is labeled
+as an author check; after each answer the preview also shows the current
+learner action result, `pending_evaluation` (ungraded). Responses outside the
+package show the expected answer and explanation; variants show their
+rationale. A 320px frame and wide layout let authors inspect reflow. Browser tests cover these
 states at desktop and mobile viewports.
 
 This is a **provisional package check**. The current learner action records
